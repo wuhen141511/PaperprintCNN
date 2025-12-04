@@ -1,0 +1,36 @@
+# Configuration for QR Code Classification Training
+
+# Data settings
+data:
+  train_dir: "data/train"
+  val_dir: "data/val"
+  image_size: 224
+  batch_size: 32
+  num_workers: 0  # Set to 0 for Windows, increase for Linux/Mac
+
+# Model settings
+model:
+  name: "resnet50"  # Options: resnet50, resnet18, efficientnet_b0, mobilenet_v3_small
+  num_classes: 2
+  pretrained: true
+  freeze_backbone: true  # Start with frozen backbone for feature extraction
+
+# Training settings
+training:
+  num_epochs: 20
+  learning_rate: 0.001
+  optimizer: "adam"
+  scheduler: "reduce_on_plateau"  # Reduce LR when validation accuracy plateaus
+  
+# Checkpoint settings
+checkpoint:
+  dir: "checkpoints"
+  save_frequency: 1  # Save checkpoint every N epochs
+  
+# Logging settings
+logging:
+  dir: "logs"
+  tensorboard: true
+
+# Other settings
+seed: 42

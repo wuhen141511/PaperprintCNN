@@ -1,0 +1,2 @@
+# Placeholder file to ensure checkpoints directory is tracked by git
+# Actual checkpoint files (.pth) are ignored by .gitignore
