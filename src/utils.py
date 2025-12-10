@@ -213,3 +213,148 @@ def visualize_predictions(images, predictions, labels, class_names, num_images=8
     
     plt.tight_layout()
     plt.show()
+
+
+def split_train_val_data(
+    train_dir: str = '/data/train',
+    val_dir: str = '/data/val',
+    val_ratio: float = 0.2,
+    seed: int = 42,
+    verbose: bool = True
+) -> Dict[str, int]:
+    """
+    Split training data into train and validation sets by moving files.
+    Maintains the same class structure in both directories.
+    
+    Args:
+        train_dir: Path to training directory containing class subdirectories
+        val_dir: Path to validation directory (will be created if doesn't exist)
+        val_ratio: Ratio of data to move to validation set (0.0 to 1.0)
+        seed: Random seed for reproducibility
+        verbose: Whether to print progress information
+        
+    Returns:
+        Dictionary containing statistics about the split
+        
+    Example:
+        >>> stats = split_train_val_data(
+        ...     train_dir='/data/train',
+        ...     val_dir='/data/val',
+        ...     val_ratio=0.2
+        ... )
+        >>> print(f"Moved {stats['total_moved']} images to validation set")
+    """
+    import shutil
+    from pathlib import Path
+    
+    # Set random seed for reproducibility
+    random.seed(seed)
+    np.random.seed(seed)
+    
+    # Convert to Path objects
+    train_path = Path(train_dir)
+    val_path = Path(val_dir)
+    
+    # Validate inputs
+    if not train_path.exists():
+        raise ValueError(f"Training directory does not exist: {train_dir}")
+    
+    if not 0.0 < val_ratio < 1.0:
+        raise ValueError(f"val_ratio must be between 0.0 and 1.0, got {val_ratio}")
+    
+    # Create validation directory if it doesn't exist
+    val_path.mkdir(parents=True, exist_ok=True)
+    
+    # Statistics
+    stats = {
+        'total_moved': 0,
+        'total_remaining': 0,
+        'classes': {},
+        'val_ratio_actual': 0.0
+    }
+    
+    # Get all class directories
+    class_dirs = [d for d in train_path.iterdir() if d.is_dir()]
+    
+    if len(class_dirs) == 0:
+        raise ValueError(f"No class directories found in {train_dir}")
+    
+    if verbose:
+        print(f"Found {len(class_dirs)} classes in {train_dir}")
+        print(f"Target validation ratio: {val_ratio:.1%}")
+        print("-" * 60)
+    
+    # Process each class
+    for class_dir in sorted(class_dirs):
+        class_name = class_dir.name
+        
+        # Get all image files in this class
+        image_extensions = {'.jpg', '.jpeg', '.png', '.bmp', '.gif', '.tiff', '.webp'}
+        image_files = [
+            f for f in class_dir.iterdir() 
+            if f.is_file() and f.suffix.lower() in image_extensions
+        ]
+        
+        if len(image_files) == 0:
+            if verbose:
+                print(f"⚠️  Class '{class_name}': No images found, skipping")
+            continue
+        
+        # Calculate number of files to move
+        num_total = len(image_files)
+        num_val = max(1, int(num_total * val_ratio))  # At least 1 image for validation
+        num_train = num_total - num_val
+        
+        # Randomly shuffle and select files for validation
+        random.shuffle(image_files)
+        val_files = image_files[:num_val]
+        
+        # Create validation class directory
+        val_class_dir = val_path / class_name
+        val_class_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Move files to validation directory
+        moved_count = 0
+        for img_file in val_files:
+            dest_file = val_class_dir / img_file.name
+            
+            # Handle duplicate filenames
+            if dest_file.exists():
+                base_name = img_file.stem
+                extension = img_file.suffix
+                counter = 1
+                while dest_file.exists():
+                    dest_file = val_class_dir / f"{base_name}_{counter}{extension}"
+                    counter += 1
+            
+            # Move the file
+            shutil.move(str(img_file), str(dest_file))
+            moved_count += 1
+        
+        # Update statistics
+        stats['total_moved'] += moved_count
+        stats['total_remaining'] += num_train
+        stats['classes'][class_name] = {
+            'total': num_total,
+            'moved_to_val': moved_count,
+            'remaining_in_train': num_train,
+            'actual_val_ratio': moved_count / num_total
+        }
+        
+        if verbose:
+            print(f"✓ Class '{class_name}': {moved_count}/{num_total} images moved "
+                  f"({moved_count/num_total:.1%}) | {num_train} remaining")
+    
+    # Calculate overall statistics
+    total_images = stats['total_moved'] + stats['total_remaining']
+    stats['val_ratio_actual'] = stats['total_moved'] / total_images if total_images > 0 else 0.0
+    
+    if verbose:
+        print("-" * 60)
+        print(f"✅ Split completed successfully!")
+        print(f"   Total images processed: {total_images}")
+        print(f"   Moved to validation: {stats['total_moved']} ({stats['val_ratio_actual']:.1%})")
+        print(f"   Remaining in training: {stats['total_remaining']}")
+        print(f"   Validation directory: {val_dir}")
+    
+    return stats
