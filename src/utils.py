@@ -7,8 +7,9 @@ import random
 import numpy as np
 import torch
 import matplotlib.pyplot as plt
-from typing import Dict, List, Tuple
+from typing import Dict, List, Tuple, Optional
 import os
+from pathlib import Path
 
 
 def set_seed(seed: int = 42):
@@ -358,3 +359,210 @@ def split_train_val_data(
         print(f"   Validation directory: {val_dir}")
     
     return stats
+
+
+def export_to_onnx(
+    model_path: Optional[str] = None,
+    output_path: Optional[str] = None,
+    input_size: Tuple[int, int, int] = (3, 350, 350),
+    batch_size: int = 1,
+    opset_version: int = 11,
+    dynamic_axes: bool = True,
+    verbose: bool = True
+) -> str:
+    """
+    Export PyTorch model (.pth) to ONNX format for C++ and OpenCV deployment.
+    
+    Args:
+        model_path: Path to the PyTorch checkpoint (.pth file).
+                   If None, uses 'checkpoints/best_model.pth'
+        output_path: Path to save the ONNX model. 
+                    If None, saves in the same directory as model_path with .onnx extension
+        input_size: Input tensor size as (channels, height, width). Default: (3, 350, 350)
+        batch_size: Batch size for the dummy input. Default: 1
+        opset_version: ONNX opset version. Default: 11 (compatible with most OpenCV versions)
+        dynamic_axes: Whether to use dynamic batch size. Default: True
+        verbose: Whether to print detailed information. Default: True
+        
+    Returns:
+        Path to the exported ONNX model
+        
+    Example:
+        >>> # Export default model
+        >>> onnx_path = export_to_onnx()
+        
+        >>> # Export specific model
+        >>> onnx_path = export_to_onnx(
+        ...     model_path='checkpoints/epoch_10.pth',
+        ...     output_path='models/qrcode_classifier.onnx'
+        ... )
+    """
+    # Import required modules
+    try:
+        import torch.onnx
+    except ImportError:
+        raise ImportError("PyTorch is required for ONNX export")
+    
+    # Set default model path if not provided
+    if model_path is None:
+        model_path = 'checkpoints/best_model.pth'
+    
+    model_path = Path(model_path)
+    
+    # Validate model path
+    if not model_path.exists():
+        raise FileNotFoundError(f"Model checkpoint not found: {model_path}")
+    
+    # Set output path
+    if output_path is None:
+        output_path = model_path.parent / f"{model_path.stem}.onnx"
+    else:
+        output_path = Path(output_path)
+    
+    # Create output directory if needed
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    
+    if verbose:
+        print("=" * 70)
+        print("PyTorch to ONNX Model Export")
+        print("=" * 70)
+        print(f"Input model:     {model_path}")
+        print(f"Output ONNX:     {output_path}")
+        print(f"Input size:      {batch_size} x {input_size[0]} x {input_size[1]} x {input_size[2]}")
+        print(f"Opset version:   {opset_version}")
+        print(f"Dynamic axes:    {dynamic_axes}")
+        print("-" * 70)
+    
+    # Load the model
+    device = torch.device('cpu')  # Export on CPU for compatibility
+    
+    if verbose:
+        print("Loading PyTorch model...")
+    
+    # Load checkpoint
+    checkpoint = torch.load(model_path, map_location=device)
+    
+    # Import model class
+    from src.model import QRCodeClassifier
+    
+    # Get model configuration from checkpoint or use defaults
+    if 'model_name' in checkpoint:
+        model_name = checkpoint['model_name']
+    else:
+        model_name = 'resnet50'  # Default
+    
+    if 'num_classes' in checkpoint:
+        num_classes = checkpoint['num_classes']
+    else:
+        # Try to infer from state dict
+        try:
+            num_classes = checkpoint['model_state_dict']['classifier.4.weight'].shape[0]
+        except:
+            num_classes = 2  # Default
+    
+    # Create model
+    model = QRCodeClassifier(
+        num_classes=num_classes,
+        model_name=model_name,
+        pretrained=False,
+        freeze_backbone=False
+    )
+    
+    # Load weights
+    model.load_state_dict(checkpoint['model_state_dict'])
+    model.eval()
+    model.to(device)
+    
+    if verbose:
+        print(f"✓ Model loaded successfully")
+        print(f"  - Architecture: {model_name}")
+        print(f"  - Classes:      {num_classes}")
+        if 'epoch' in checkpoint:
+            print(f"  - Epoch:        {checkpoint['epoch']}")
+        if 'accuracy' in checkpoint:
+            print(f"  - Accuracy:     {checkpoint['accuracy']:.4f}")
+        print("-" * 70)
+    
+    # Create dummy input
+    dummy_input = torch.randn(batch_size, *input_size, device=device)
+    
+    if verbose:
+        print("Exporting to ONNX format...")
+    
+    # Define dynamic axes for variable batch size
+    if dynamic_axes:
+        dynamic_axes_dict = {
+            'input': {0: 'batch_size'},
+            'output': {0: 'batch_size'}
+        }
+    else:
+        dynamic_axes_dict = None
+    
+    # Export to ONNX
+    try:
+        # Use legacy exporter for better compatibility
+        # The new dynamo-based exporter has compatibility issues with some onnxscript versions
+        torch.onnx.export(
+            model,                          # Model to export
+            dummy_input,                    # Dummy input
+            str(output_path),              # Output path
+            export_params=True,            # Store trained parameters
+            opset_version=opset_version,   # ONNX version
+            do_constant_folding=True,      # Optimize constant folding
+            input_names=['input'],         # Input names
+            output_names=['output'],       # Output names
+            dynamic_axes=dynamic_axes_dict,# Dynamic axes
+            dynamo=False                   # Use legacy TorchScript-based exporter
+        )
+        
+        if verbose:
+            print(f"✓ ONNX export successful!")
+            print("-" * 70)
+            
+        # Verify the exported model
+        try:
+            import onnx
+            onnx_model = onnx.load(str(output_path))
+            onnx.checker.check_model(onnx_model)
+            
+            if verbose:
+                print("✓ ONNX model verification passed")
+                
+                # Get model size
+                model_size_mb = output_path.stat().st_size / (1024 * 1024)
+                print(f"  - Model size: {model_size_mb:.2f} MB")
+                
+                # Print input/output info
+                print("\nModel I/O Information:")
+                print(f"  Input:  {onnx_model.graph.input[0].name}")
+                print(f"          Shape: {[d.dim_value if d.dim_value > 0 else 'dynamic' for d in onnx_model.graph.input[0].type.tensor_type.shape.dim]}")
+                print(f"  Output: {onnx_model.graph.output[0].name}")
+                print(f"          Shape: {[d.dim_value if d.dim_value > 0 else 'dynamic' for d in onnx_model.graph.output[0].type.tensor_type.shape.dim]}")
+                
+        except ImportError:
+            if verbose:
+                print("⚠ ONNX package not found - skipping verification")
+                print("  Install with: pip install onnx")
+        except Exception as e:
+            if verbose:
+                print(f"⚠ ONNX verification warning: {e}")
+        
+        if verbose:
+            print("=" * 70)
+            print("Export completed successfully!")
+            print(f"ONNX model saved to: {output_path.absolute()}")
+            print("=" * 70)
+            print("\nUsage in C++ with OpenCV:")
+            print("  cv::dnn::Net net = cv::dnn::readNetFromONNX(\"model.onnx\");")
+            print("  cv::Mat blob = cv::dnn::blobFromImage(image, 1.0/255.0, ")
+            print(f"                 cv::Size({input_size[2]}, {input_size[1]}), ")
+            print("                 cv::Scalar(0.485, 0.456, 0.406), true, false);")
+            print("  net.setInput(blob);")
+            print("  cv::Mat output = net.forward();")
+            print("=" * 70)
+        
+        return str(output_path.absolute())
+        
+    except Exception as e:
+        raise RuntimeError(f"Failed to export model to ONNX: {e}")
+

@@ -13,6 +13,7 @@ env/
 # PyTorch
 *.pth
 *.pt
+*.onnx
 
 # Except checkpoints directory structure
 !checkpoints/.gitkeep
