@@ -4,7 +4,7 @@
 data:
   train_dir: "data/train"
   val_dir: "data/val"
-  image_size: 350
+  image_size: 224
   batch_size: 32
   num_workers: 0  # Set to 0 for Windows, increase for Linux/Mac
 

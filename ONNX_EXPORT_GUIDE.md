@@ -66,65 +66,153 @@ onnx_path = export_to_onnx(
 
 Once you have exported your model to ONNX format, you can use it in C++ with OpenCV's DNN module:
 
+### ⚠️ Important: Correct Preprocessing
+
+**The model expects the SAME preprocessing as PyTorch training:**
+```
+normalized = (pixel / 255.0 - mean) / std
+```
+Where:
+- mean = [0.485, 0.456, 0.406]
+- std = [0.229, 0.224, 0.225]
+
+**Problem**: OpenCV's `blobFromImage` can only do `(pixel * scale - mean)`, it **cannot divide by std**.
+
+**Solution**: You must manually divide by std after using `blobFromImage`.
+
+### Complete C++ Example
+
 ```cpp
 #include <opencv2/opencv.hpp>
 #include <opencv2/dnn.hpp>
+#include <iostream>
 
 int main() {
     // Load the ONNX model
     cv::dnn::Net net = cv::dnn::readNetFromONNX("checkpoints/best_model.onnx");
     
+    // Check if model loaded successfully
+    if (net.empty()) {
+        std::cerr << "Failed to load ONNX model" << std::endl;
+        return -1;
+    }
+    
     // Load and preprocess image
     cv::Mat image = cv::imread("test_image.jpg");
+    if (image.empty()) {
+        std::cerr << "Failed to load image" << std::endl;
+        return -1;
+    }
     
-    // Create blob from image (normalize and resize)
+    // CRITICAL: Correct preprocessing to match PyTorch
+    // Step 1: Convert BGR to RGB and resize
+    cv::Mat rgb_image;
+    cv::cvtColor(image, rgb_image, cv::COLOR_BGR2RGB);
+    
+    // Step 2: Create blob with scale=1/255 and ImageNet mean
+    // Note: blobFromImage does (pixel * scalefactor - mean)
     cv::Mat blob = cv::dnn::blobFromImage(
-        image,
-        1.0/255.0,                              // Scale factor
-        cv::Size(350, 350),                     // Target size
-        cv::Scalar(0.485, 0.456, 0.406),       // Mean values (ImageNet)
-        true,                                   // Swap RB channels
-        false                                   // Crop
+        rgb_image,
+        1.0/255.0,                              // Scale to [0, 1]
+        cv::Size(224, 224),                     // Target size (must match training)
+        cv::Scalar(0.485, 0.456, 0.406),       // ImageNet mean (RGB order)
+        false,                                  // swapRB=false (already converted to RGB)
+        false                                   // crop=false
     );
     
-    // Note: OpenCV uses different normalization, you may need to adjust
-    // the mean and std values based on your training configuration
+    // Step 3: CRITICAL - Divide by std (OpenCV can't do this automatically)
+    // PyTorch normalization: (x - mean) / std
+    // After blobFromImage we have: (x - mean)
+    // Now we need to divide by std
+    cv::Scalar std_values(0.229, 0.224, 0.225);  // ImageNet std (RGB order)
     
-    // Set input and run inference
+    // Divide each channel by its std
+    // blob shape is [1, 3, 224, 224] - need to divide each channel
+    float* blob_data = (float*)blob.data;
+    int channel_size = 224 * 224;  // pixels per channel
+    
+    for (int c = 0; c < 3; c++) {
+        float std_val = (c == 0) ? std_values[0] : (c == 1) ? std_values[1] : std_values[2];
+        for (int i = 0; i < channel_size; i++) {
+            blob_data[c * channel_size + i] /= std_val;
+        }
+    }
+    
+    // Step 4: Run inference
     net.setInput(blob);
     cv::Mat output = net.forward();
     
-    // Get prediction
+    // Step 5: Apply softmax to get probabilities
+    cv::Mat probs;
+    cv::exp(output, probs);
+    cv::Scalar sum = cv::sum(probs);
+    probs /= sum[0];
+    
+    // Step 6: Get prediction
     cv::Point classIdPoint;
     double confidence;
-    cv::minMaxLoc(output.reshape(1, 1), 0, &confidence, 0, &classIdPoint);
+    cv::minMaxLoc(probs.reshape(1, 1), 0, &confidence, 0, &classIdPoint);
     int classId = classIdPoint.x;
     
+    // Step 7: Print results
     std::cout << "Predicted class: " << classId << std::endl;
-    std::cout << "Confidence: " << confidence << std::endl;
+    std::cout << "Confidence: " << (confidence * 100.0) << "%" << std::endl;
+    std::cout << "\nClass probabilities:" << std::endl;
+    for (int i = 0; i < probs.cols; i++) {
+        std::cout << "  Class " << i << ": " 
+                  << (probs.at<float>(0, i) * 100.0) << "%" << std::endl;
+    }
     
     return 0;
 }
 ```
 
-### Important Notes for C++ Deployment:
+### Alternative: Helper Function for Preprocessing
 
-1. **Normalization**: The model expects ImageNet-normalized inputs:
-   - Mean: [0.485, 0.456, 0.406]
-   - Std: [0.229, 0.224, 0.225]
-   
-   You may need to manually apply std normalization after using `blobFromImage`.
+```cpp
+// Helper function to preprocess image exactly like PyTorch
+cv::Mat preprocessImage(const cv::Mat& image, int target_size = 224) {
+    // Convert BGR to RGB
+    cv::Mat rgb_image;
+    cv::cvtColor(image, rgb_image, cv::COLOR_BGR2RGB);
+    
+    // Resize
+    cv::Mat resized;
+    cv::resize(rgb_image, resized, cv::Size(target_size, target_size));
+    
+    // Convert to float and normalize to [0, 1]
+    cv::Mat float_image;
+    resized.convertTo(float_image, CV_32F, 1.0/255.0);
+    
+    // ImageNet normalization
+    cv::Scalar mean(0.485, 0.456, 0.406);
+    cv::Scalar std(0.229, 0.224, 0.225);
+    
+    // Subtract mean
+    float_image -= mean;
+    
+    // Divide by std (per channel)
+    std::vector<cv::Mat> channels(3);
+    cv::split(float_image, channels);
+    channels[0] /= std[0];  // R
+    channels[1] /= std[1];  // G
+    channels[2] /= std[2];  // B
+    cv::merge(channels, float_image);
+    
+    // Convert to blob format [1, 3, H, W]
+    cv::Mat blob = cv::dnn::blobFromImage(float_image, 1.0, 
+                                          cv::Size(target_size, target_size),
+                                          cv::Scalar(0, 0, 0), false, false);
+    
+    return blob;
+}
 
-2. **Input Size**: Make sure to use the same input size as during training (default: 350x350).
-
-3. **Color Channels**: The model expects RGB images, but OpenCV loads images in BGR format. Use `swapRB=true` in `blobFromImage`.
-
-4. **Output Format**: The model outputs logits (raw scores). Apply softmax if you need probabilities:
-   ```cpp
-   cv::exp(output, output);
-   cv::Scalar sum = cv::sum(output);
-   output /= sum[0];  // Now contains probabilities
-   ```
+// Usage:
+cv::Mat image = cv::imread("test.jpg");
+cv::Mat blob = preprocessImage(image, 224);
+net.setInput(blob);
+cv::Mat output = net.forward();
+```
 
 ## Compilation Example
 

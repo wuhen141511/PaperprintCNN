@@ -26,7 +26,8 @@ class QRCodePredictor:
         class_names: List[str] = None,
         model_name: str = 'resnet50',
         image_size: int = 224,
-        device: str = None
+        device: str = None,
+        backend: str = 'opencv'  # New parameter: 'pil' or 'opencv'
     ):
         """
         Initialize predictor.
@@ -37,10 +38,13 @@ class QRCodePredictor:
             model_name: Name of the model architecture
             image_size: Input image size
             device: Device to use (None for auto-detection)
+            backend: Preprocessing backend ('pil' or 'opencv')
         """
         self.device = get_device() if device is None else torch.device(device)
         self.image_size = image_size
-        self.transform = get_inference_transform(image_size)
+        # Use the requested backend
+        self.transform = get_inference_transform(image_size, backend=backend)
+        self.backend = backend
         
         # Load class names
         if class_names is None:
@@ -84,6 +88,7 @@ class QRCodePredictor:
         # Predict
         with torch.no_grad():
             outputs = self.model(image_tensor)
+            print(outputs)
             probs = F.softmax(outputs, dim=1)
             confidence, predicted = torch.max(probs, 1)
         
@@ -181,7 +186,8 @@ def predict_single_image(
     image_path: str,
     checkpoint_path: str,
     model_name: str = 'resnet50',
-    visualize: bool = True
+    visualize: bool = True,
+    backend: str = 'opencv'
 ) -> Dict:
     """
     Convenience function to predict a single image.
@@ -191,13 +197,15 @@ def predict_single_image(
         checkpoint_path: Path to model checkpoint
         model_name: Name of the model architecture
         visualize: Whether to visualize the prediction
+        backend: 'pil' or 'opencv'
         
     Returns:
         Prediction dictionary
     """
     predictor = QRCodePredictor(
         checkpoint_path=checkpoint_path,
-        model_name=model_name
+        model_name=model_name,
+        backend=backend
     )
     
     result = predictor.predict_image(image_path)

@@ -4,11 +4,63 @@ Handles image preprocessing, augmentation, and data loading.
 """
 
 import os
-from typing import Tuple, Optional
+from typing import Tuple, Optional, Union
 import torch
 from torch.utils.data import Dataset, DataLoader
 from torchvision import transforms, datasets
 from PIL import Image
+import numpy as np
+import cv2
+
+
+class OpenCVTransform:
+    """
+    OpenCV-based preprocessing to match C++ deployment exactly.
+    Input: PIL Image (RGB) or numpy array (RGB)
+    Output: Tensor [C, H, W] normalized
+    """
+    def __init__(self, image_size: int, mean: list, std: list):
+        self.image_size = image_size
+        self.mean = np.array(mean, dtype=np.float32)
+        self.std = np.array(std, dtype=np.float32)
+
+    def __call__(self, img):
+        # 1. Convert PIL to numpy (RGB)
+        if isinstance(img, Image.Image):
+            img = np.array(img)
+        
+        # 2. Resize using OpenCV (Bilinear default)
+        # Note: cv2.resize expects (width, height) - reverse of numpy shape
+        img = cv2.resize(img, (self.image_size, self.image_size), interpolation=cv2.INTER_LINEAR)
+        
+        # 3. Normalize
+        img = img.astype(np.float32) / 255.0
+        img = (img - self.mean) / self.std
+        
+        # 4. To Tensor [H, W, C] -> [C, H, W]
+        img = img.transpose(2, 0, 1)
+        return torch.from_numpy(img)
+
+
+class OpenCVResize:
+    """
+    OpenCV Resize implementation compatible with PIL pipeline.
+    Used for training to align downsampling algorithm with C++ deployment.
+    """
+    def __init__(self, size):
+        self.size = size if isinstance(size, (tuple, list)) else (size, size)
+
+    def __call__(self, img):
+        # Convert PIL to numpy
+        if isinstance(img, Image.Image):
+            img = np.array(img)
+            
+        # Resize
+        # cv2.resize uses (width, height)
+        img = cv2.resize(img, (self.size[1], self.size[0]), interpolation=cv2.INTER_LINEAR)
+        
+        # Convert back to PIL for subsequent torchvision transforms
+        return Image.fromarray(img)
 
 
 class QRCodeDataset(Dataset):
@@ -88,36 +140,57 @@ class QRCodeDataset(Dataset):
         return image, label
 
 
-def get_transforms(image_size: int = 224, augment: bool = True):
+def get_transforms(
+    image_size: int = 224, 
+    augment: bool = True,
+    backend: str = 'opencv'  # Options: 'pil', 'opencv'
+):
     """
     Get image transforms for training and validation.
     
     Args:
-        image_size: Target image size (will be resized to image_size x image_size)
-        augment: Whether to apply data augmentation (for training)
+        image_size: Target image size
+        augment: Whether to apply data augmentation (images only)
+        backend: 'pil' (default PyTorch) or 'opencv' (match C++ result)
         
     Returns:
-        torchvision.transforms.Compose object
+        transform function/object
     """
+    mean = [0.485, 0.456, 0.406]
+    std = [0.229, 0.224, 0.225]
+
+    # For pure inference without augmentations, use the dedicated OpenCVTransform
+    if backend == 'opencv' and not augment:
+        return OpenCVTransform(image_size, mean, std)
+
+    # Prepare logic for Resize step
+    if backend == 'opencv':
+        # Use OpenCV for resizing (to align with deployment), assume square
+        resize_transform = OpenCVResize(image_size)
+    else:
+        # Standard PIL resizing
+        resize_transform = transforms.Resize((image_size, image_size))
+
     if augment:
         # Training transforms with augmentation
         transform = transforms.Compose([
-            transforms.Resize((image_size, image_size)),
+            resize_transform,
             transforms.RandomHorizontalFlip(p=0.5),
             transforms.RandomRotation(degrees=5),
             transforms.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2, hue=0.1),
             transforms.RandomAffine(degrees=0, translate=(0.05, 0.05), scale=(0.95, 1.05)),
             transforms.ToTensor(),
-            transforms.Normalize(mean=[0.485, 0.456, 0.406], 
-                               std=[0.229, 0.224, 0.225])
+            transforms.Normalize(mean=mean, std=std)
         ])
     else:
         # Validation/test transforms without augmentation
+        # Even if backend='opencv' is passed here (and for some reason didn't hit the first if block),
+        # we'd construct a PIL-compatible sequence. But usually it hits the first block.
+        # This block is mainly for backend='pil'
         transform = transforms.Compose([
-            transforms.Resize((image_size, image_size)),
+            resize_transform,
             transforms.ToTensor(),
-            transforms.Normalize(mean=[0.485, 0.456, 0.406], 
-                               std=[0.229, 0.224, 0.225])
+            transforms.Normalize(mean=mean, std=std)
         ])
     
     return transform
@@ -128,24 +201,17 @@ def create_dataloaders(
     val_dir: str,
     batch_size: int = 32,
     image_size: int = 224,
-    num_workers: int = 0
+    num_workers: int = 0,
+    backend: str = 'opencv'
 ) -> Tuple[DataLoader, DataLoader, list]:
     """
     Create training and validation data loaders.
-    
-    Args:
-        train_dir: Path to training data directory
-        val_dir: Path to validation data directory
-        batch_size: Batch size for data loaders
-        image_size: Target image size
-        num_workers: Number of worker processes for data loading
-        
-    Returns:
-        Tuple of (train_loader, val_loader, class_names)
     """
-    # Get transforms
-    train_transform = get_transforms(image_size=image_size, augment=True)
-    val_transform = get_transforms(image_size=image_size, augment=False)
+    # Get transforms (Training usually stays on PIL for augmentation support)
+    train_transform = get_transforms(image_size=image_size, augment=True, backend=backend)
+    
+    # Validation can use PIL or OpenCV, stick to PIL for standard training metrics
+    val_transform = get_transforms(image_size=image_size, augment=False, backend=backend)
     
     # Create datasets
     train_dataset = QRCodeDataset(train_dir, transform=train_transform)
@@ -175,14 +241,15 @@ def create_dataloaders(
     return train_loader, val_loader, train_dataset.classes
 
 
-def get_inference_transform(image_size: int = 224):
+def get_inference_transform(image_size: int = 224, backend: str = 'opencv'):
     """
     Get transform for inference on single images.
     
     Args:
         image_size: Target image size
+        backend: 'pil' (default) or 'opencv'
         
     Returns:
-        torchvision.transforms.Compose object
+        transform function/object
     """
-    return get_transforms(image_size=image_size, augment=False)
+    return get_transforms(image_size=image_size, augment=False, backend=backend)
