@@ -3,7 +3,7 @@ name = "imagenet"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
-requires-python = ">=3.12"
+requires-python = ">=3.12, <3.13"
 dependencies = [
     "ruff>=0.14.7",
     "torch>=2.0.0",
@@ -16,3 +16,12 @@ dependencies = [
     "pyyaml>=6.0",
     "opencv-contrib-python>=4.11.0.86",
 ]
+
+[[tool.uv.index]]
+name = "pytorch"
+url = "https://download.pytorch.org/whl/cu124"
+explicit = true
+
+[tool.uv.sources]
+torch = [{ index = "pytorch" }]
+torchvision = [{ index = "pytorch" }]
