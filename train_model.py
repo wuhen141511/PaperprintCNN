@@ -21,7 +21,7 @@ if __name__ == '__main__':
     history = train_model(
         train_dir='data/train',
         val_dir='data/val',
-        model_name='resnet50',
+        model_name='convnextv2_tiny',
         num_labels=3,  # Multi-label count
         batch_size=32,
         learning_rate=0.001,

@@ -33,13 +33,13 @@ class ModelPredictor:
             cls._instance = super().__new__(cls)
         return cls._instance
     
-    def initialize(self, checkpoint_path='checkpoints/best_model.pth', model_name='resnet50', multi_label=True):
+    def initialize(self, checkpoint_path='checkpoints/best_model.pth', model_name='convnextv2_tiny', multi_label=True):
         """
         初始化模型（服务器启动时调用一次）
         
         Args:
             checkpoint_path: 模型检查点路径
-            model_name: 模型名称，默认 resnet50
+            model_name: 模型名称，默认 convnextv2_tiny
             multi_label: 是否开启多标签模式
         """
         if self._predictor is None:
@@ -178,7 +178,7 @@ class ModelPredictor:
         
         return {
             'initialized': True,
-            'model_name': 'resnet50',
+            'model_name': 'convnextv2_tiny',
             'num_classes': len(self._predictor.label_names),
             'class_names': self._predictor.label_names,
             'device': str(self._predictor.device),

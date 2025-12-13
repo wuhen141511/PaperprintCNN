@@ -25,7 +25,7 @@ class QRCodePredictor:
         self,
         checkpoint_path: str,
         label_names: List[str] = None,
-        model_name: str = 'resnet50',
+        model_name: str = 'convnextv2_tiny',
         image_size: int = 224,
         device: str = None,
         backend: str = 'opencv',
@@ -238,7 +238,7 @@ class QRCodePredictor:
 def predict_single_image(
     image_path: str,
     checkpoint_path: str,
-    model_name: str = 'resnet50',
+    model_name: str = 'convnextv2_tiny',
     visualize: bool = True,
     backend: str = 'opencv',
     multi_label: bool = True
@@ -303,6 +303,6 @@ if __name__ == '__main__':
     predict_single_image(
         image_path='path/to/test/image.jpg',
         checkpoint_path='checkpoints/best_model.pth',
-        model_name='resnet50',
+        model_name='convnextv2_tiny',
         visualize=True
     )

@@ -47,7 +47,7 @@ def benchmark_prediction(image_path, checkpoint_path='checkpoints/best_model.pth
     # 默认开启多标签
     predictor = QRCodePredictor(
         checkpoint_path=checkpoint_path,
-        model_name='resnet50',
+        model_name='convnextv2_tiny',
         multi_label=True
     )
     load_time = time.time() - start_time

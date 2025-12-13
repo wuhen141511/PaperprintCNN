@@ -58,7 +58,15 @@ class QRCodeClassifier(nn.Module):
             self.backbone.classifier = nn.Identity()
             
         else:
-            raise ValueError(f"Unsupported model: {model_name}")
+            # Try loading from timm
+            try:
+                import timm
+                self.backbone = timm.create_model(model_name, pretrained=pretrained, num_classes=0)
+                num_features = self.backbone.num_features
+            except ImportError:
+                raise ImportError("Please install 'timm' library to use this model: pip install timm")
+            except Exception as e:
+                raise ValueError(f"Unsupported model: {model_name}. Error: {str(e)}")
         
         # Freeze backbone if requested
         if freeze_backbone:
