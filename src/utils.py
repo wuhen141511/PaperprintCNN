@@ -131,6 +131,54 @@ def calculate_metrics(predictions: torch.Tensor, labels: torch.Tensor) -> Dict[s
     }
 
 
+def calculate_multilabel_metrics(predictions: torch.Tensor, labels: torch.Tensor, threshold: float = 0.5) -> Dict[str, float]:
+    """
+    Calculate multi-label classification metrics.
+    
+    Args:
+        predictions: Model predictions (logits), shape: (batch_size, num_labels)
+        labels: Ground truth labels (0 or 1), shape: (batch_size, num_labels)
+        threshold: Threshold for converting probabilities to binary predictions
+        
+    Returns:
+        Dictionary containing per-label accuracy, mean accuracy, and other metrics
+    """
+    # Apply sigmoid to convert logits to probabilities
+    probs = torch.sigmoid(predictions)
+    
+    # Convert probabilities to binary predictions
+    pred_labels = (probs >= threshold).float()
+    
+    # Calculate per-label accuracy
+    num_labels = predictions.size(1)
+    label_accuracies = []
+    
+    for i in range(num_labels):
+        correct = (pred_labels[:, i] == labels[:, i]).sum().item()
+        total = labels.size(0)
+        accuracy = correct / total
+        label_accuracies.append(accuracy)
+    
+    # Calculate mean accuracy across all labels
+    mean_accuracy = sum(label_accuracies) / num_labels
+    
+    # Calculate exact match ratio (all labels must be correct)
+    exact_match = (pred_labels == labels).all(dim=1).sum().item()
+    exact_match_ratio = exact_match / labels.size(0)
+    
+    # Build result dictionary
+    result = {
+        'mean_accuracy': mean_accuracy,
+        'exact_match_ratio': exact_match_ratio
+    }
+    
+    # Add per-label accuracies
+    for i, acc in enumerate(label_accuracies):
+        result[f'label_{i}_accuracy'] = acc
+    
+    return result
+
+
 def plot_training_history(history: Dict[str, List[float]], save_path: str = None):
     """
     Plot training history (loss and accuracy curves).
@@ -458,7 +506,7 @@ def export_to_onnx(
         try:
             num_classes = checkpoint['model_state_dict']['classifier.4.weight'].shape[0]
         except:
-            num_classes = 2  # Default
+            num_classes = 3  # Default to 3 for multi-label mode
     
     # Create model
     model = QRCodeClassifier(

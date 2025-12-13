@@ -1,13 +1,20 @@
-# QR Code Classification System
+# QR Code Multi-Label Classification System
 
-一个基于深度学习的二维码图片分类系统，用于区分**原始印刷的二维码**和**复印的二维码**。
+一个基于深度学习的二维码图片**多标签分类系统**，用于同时识别二维码图像的多种属性。
 
 ## 项目简介
 
-本项目使用迁移学习（Transfer Learning）技术，基于预训练的 ResNet-50 模型，训练一个自定义的二维码分类器。系统能够自动识别一张二维码图片是原始印刷的还是通过图片二次复印的。
+本项目使用迁移学习（Transfer Learning）技术，基于预训练的 ResNet-50 模型，训练一个自定义的二维码多标签分类器。系统能够同时识别一张二维码图片的三种属性：
+
+1. **is_copied**: 是否为复印件（介质属性）
+2. **is_blurry**: 是否模糊（成像质量）
+3. **is_low_light**: 是否暗光（成像质量）
+
+**注意**：这三个属性是非互斥的，一张图片可以同时具有多个属性（例如：既是复印件，又是暗光拍摄）。
 
 ### 主要特性
 
+- ✅ **多标签分类**: 同时识别三种二维码属性
 - ✅ 基于 PyTorch 和预训练模型（ResNet-50/18, EfficientNet, MobileNet）
 - ✅ 完整的训练和推理流程
 - ✅ 数据增强防止过拟合
@@ -15,6 +22,7 @@
 - ✅ 自动保存最佳模型
 - ✅ 支持 GPU 加速训练
 - ✅ 简单易用的命令行接口
+- ✅ JSON 格式的灵活标注系统
 
 ## 环境要求
 
@@ -39,32 +47,61 @@ uv sync
 
 ## 数据准备
 
-### 目录结构
+### 多标签分类数据格式
 
-将您的数据组织成以下结构：
+多标签分类使用 JSON 注释文件来标注每张图片的属性。
+
+### 目录结构
 
 ```
 data/
 ├── train/
-│   ├── original/      # 原始印刷的二维码图片
-│   │   ├── img1.jpg
-│   │   ├── img2.jpg
+│   ├── images/              # 训练图片
+│   │   ├── img001.jpg
+│   │   ├── img002.jpg
 │   │   └── ...
-│   └── copied/        # 复印的二维码图片
-│       ├── img1.jpg
-│       ├── img2.jpg
-│       └── ...
+│   └── annotations.json     # 训练标注文件
 └── val/
-    ├── original/      # 验证集：原始印刷的二维码
+    ├── images/              # 验证图片
+    │   ├── img001.jpg
+    │   ├── img002.jpg
     │   └── ...
-    └── copied/        # 验证集：复印的二维码
-        └── ...
+    └── annotations.json     # 验证标注文件
+```
+
+### 注释文件格式 (annotations.json)
+
+```json
+{
+    "img001.jpg": {
+        "is_copied": 0,
+        "is_blurry": 0,
+        "is_low_light": 0
+    },
+    "img002.jpg": {
+        "is_copied": 1,
+        "is_blurry": 1,
+        "is_low_light": 0
+    }
+}
+```
+
+### 快速创建注释文件
+
+使用提供的辅助脚本：
+
+```bash
+# 创建注释模板
+python create_annotations.py create data/train/images
+
+# 验证注释文件
+python create_annotations.py validate data/train/annotations.json
 ```
 
 ### 数据建议
 
-- **训练集**：每个类别至少 100 张图片（越多越好）
-- **验证集**：每个类别至少 20-30 张图片
+- **训练集**：每个标签至少 100 个正样本（越多越好）
+- **验证集**：每个标签至少 20-30 个正样本
 - **图片格式**：支持 JPG, PNG, BMP, GIF
 - **图片质量**：建议分辨率至少 224x224 像素
 - **数据平衡**：两个类别的图片数量尽量接近

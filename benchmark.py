@@ -44,9 +44,11 @@ def benchmark_prediction(image_path, checkpoint_path='checkpoints/best_model.pth
     # 1. 测试模型加载时间
     print("1. 模型加载测试...")
     start_time = time.time()
+    # 默认开启多标签
     predictor = QRCodePredictor(
         checkpoint_path=checkpoint_path,
-        model_name='resnet50'
+        model_name='resnet50',
+        multi_label=True
     )
     load_time = time.time() - start_time
     print(f"   模型加载时间: {load_time:.3f} 秒")
@@ -114,11 +116,21 @@ def benchmark_prediction(image_path, checkpoint_path='checkpoints/best_model.pth
     # 6. 显示预测结果
     print("6. 预测结果:")
     print(f"   图片: {os.path.basename(image_path)}")
-    print(f"   预测类别: {result['predicted_label']}")
-    print(f"   置信度: {result['confidence']:.2%}")
-    print(f"   类别概率:")
-    for class_name, prob in result['class_probabilities'].items():
-        print(f"      - {class_name}: {prob:.2%}")
+    
+    if predictor.multi_label:
+        predictions_dict = result['predictions']
+        print(f"   预测详情:")
+        for label, info in predictions_dict.items():
+            val = info['value']
+            prob = info['probability']
+            status = "YES" if val == 1 else "NO "
+            print(f"      - [{status}] {label}: {prob:.2%}")
+    else:
+        print(f"   预测类别: {result['predicted_label']}")
+        print(f"   置信度: {result['confidence']:.2%}")
+        print(f"   类别概率:")
+        for class_name, prob in result['class_probabilities'].items():
+            print(f"      - {class_name}: {prob:.2%}")
     print()
     
     # 7. 性能总结

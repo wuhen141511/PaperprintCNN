@@ -9,27 +9,29 @@ if __name__ == '__main__':
     print("\n" + "="*60)
     print("QR Code Classification - Quick Training")
     print("="*60)
-    print("This script will train a ResNet-50 model on your QR code dataset.")
+    print("This script will train a ResNet-50 model on your QR code dataset (Multi-Label).")
     print("Make sure your data is organized as:")
-    print("  data/train/original/  - Original QR code images")
-    print("  data/train/copied/    - Copied QR code images")
-    print("  data/val/original/    - Validation original images")
-    print("  data/val/copied/      - Validation copied images")
+    print("  data/train/images/    - Training images")
+    print("  data/train/annotations.json - Training annotations")
+    print("  data/val/images/      - Validation images")
+    print("  data/val/annotations.json   - Validation annotations")
     print("="*60 + "\n")
     
-    # Train with default settings
+    # Train with default settings (Multi-Label)
     history = train_model(
         train_dir='data/train',
         val_dir='data/val',
         model_name='resnet50',
-        num_classes=2,
+        num_labels=3,  # Multi-label count
         batch_size=32,
         learning_rate=0.001,
         num_epochs=20,
         image_size=224,
         freeze_backbone=True,
         checkpoint_dir='checkpoints',
-        log_dir='logs'
+        log_dir='logs',
+        multi_label=True,
+        label_names=["is_copied", "is_blurry", "is_low_light"]
     )
     
     print("\n" + "="*60)

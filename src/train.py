@@ -1,6 +1,7 @@
 """
-Training script for QR code classification model.
+Training script for QR code multi-label classification model.
 Implements the complete training pipeline with validation and checkpointing.
+Supports both single-class and multi-label classification.
 """
 
 import os
@@ -14,18 +15,18 @@ import json
 
 from src.model import create_model
 from src.dataset import create_dataloaders
-from src.utils import set_seed, get_device, save_checkpoint, calculate_metrics
+from src.utils import set_seed, get_device, save_checkpoint, calculate_metrics, calculate_multilabel_metrics
 
 
 class Trainer:
-    """Training manager for QR code classification."""
+    """Training manager for QR code classification (single-class or multi-label)."""
     
     def __init__(
         self,
         train_dir: str,
         val_dir: str,
         model_name: str = 'resnet50',
-        num_classes: int = 2,
+        num_labels: int = 3,
         batch_size: int = 32,
         learning_rate: float = 0.001,
         num_epochs: int = 20,
@@ -34,7 +35,9 @@ class Trainer:
         checkpoint_dir: str = 'checkpoints',
         log_dir: str = 'logs',
         device: str = None,
-        seed: int = 42
+        seed: int = 42,
+        multi_label: bool = True,
+        label_names: List[str] = None
     ):
         """
         Initialize trainer.
@@ -43,7 +46,7 @@ class Trainer:
             train_dir: Path to training data directory
             val_dir: Path to validation data directory
             model_name: Name of the model architecture
-            num_classes: Number of classes
+            num_labels: Number of labels (for multi-label) or classes (for single-class)
             batch_size: Batch size for training
             learning_rate: Initial learning rate
             num_epochs: Number of training epochs
@@ -53,9 +56,15 @@ class Trainer:
             log_dir: Directory for TensorBoard logs
             device: Device to use (None for auto-detection)
             seed: Random seed for reproducibility
+            multi_label: Whether to use multi-label classification
+            label_names: List of label names for multi-label classification
         """
         # Set random seed
         set_seed(seed)
+        
+        # Store configuration
+        self.multi_label = multi_label
+        self.label_names = label_names
         
         # Setup device
         self.device = get_device() if device is None else torch.device(device)
@@ -67,13 +76,15 @@ class Trainer:
             val_dir=val_dir,
             batch_size=batch_size,
             image_size=image_size,
-            num_workers=0  # Set to 0 for Windows compatibility
+            num_workers=0,  # Set to 0 for Windows compatibility
+            multi_label=multi_label,
+            label_names=label_names
         )
         
         # Create model
         print("\nCreating model...")
         self.model = create_model(
-            num_classes=num_classes,
+            num_labels=num_labels,
             model_name=model_name,
             pretrained=True,
             freeze_backbone=freeze_backbone,
@@ -81,7 +92,13 @@ class Trainer:
         )
         
         # Setup training components
-        self.criterion = nn.CrossEntropyLoss()
+        if multi_label:
+            # Multi-label classification: BCEWithLogitsLoss
+            self.criterion = nn.BCEWithLogitsLoss()
+        else:
+            # Single-class classification: CrossEntropyLoss
+            self.criterion = nn.CrossEntropyLoss()
+            
         self.optimizer = optim.Adam(self.model.parameters(), lr=learning_rate)
         self.scheduler = optim.lr_scheduler.ReduceLROnPlateau(
             self.optimizer, mode='max', factor=0.5, patience=3
@@ -130,7 +147,12 @@ class Trainer:
             # Forward pass
             self.optimizer.zero_grad()
             outputs = self.model(images)
-            loss = self.criterion(outputs, labels)
+            
+            # For multi-label, labels should be float; for single-class, long
+            if self.multi_label:
+                loss = self.criterion(outputs, labels)
+            else:
+                loss = self.criterion(outputs, labels.long())
             
             # Backward pass
             loss.backward()
@@ -148,8 +170,13 @@ class Trainer:
         epoch_loss = running_loss / len(self.train_loader.dataset)
         all_predictions = torch.cat(all_predictions)
         all_labels = torch.cat(all_labels)
-        metrics = calculate_metrics(all_predictions, all_labels)
-        epoch_acc = metrics['accuracy']
+        
+        if self.multi_label:
+            metrics = calculate_multilabel_metrics(all_predictions, all_labels)
+            epoch_acc = metrics['mean_accuracy']
+        else:
+            metrics = calculate_metrics(all_predictions, all_labels)
+            epoch_acc = metrics['accuracy']
         
         return epoch_loss, epoch_acc
     
@@ -168,7 +195,12 @@ class Trainer:
                 
                 # Forward pass
                 outputs = self.model(images)
-                loss = self.criterion(outputs, labels)
+                
+                # For multi-label, labels should be float; for single-class, long
+                if self.multi_label:
+                    loss = self.criterion(outputs, labels)
+                else:
+                    loss = self.criterion(outputs, labels.long())
                 
                 # Track metrics
                 running_loss += loss.item() * images.size(0)
@@ -182,8 +214,13 @@ class Trainer:
         epoch_loss = running_loss / len(self.val_loader.dataset)
         all_predictions = torch.cat(all_predictions)
         all_labels = torch.cat(all_labels)
-        metrics = calculate_metrics(all_predictions, all_labels)
-        epoch_acc = metrics['accuracy']
+        
+        if self.multi_label:
+            metrics = calculate_multilabel_metrics(all_predictions, all_labels)
+            epoch_acc = metrics['mean_accuracy']
+        else:
+            metrics = calculate_metrics(all_predictions, all_labels)
+            epoch_acc = metrics['accuracy']
         
         return epoch_loss, epoch_acc
     
@@ -268,14 +305,16 @@ def train_model(
     train_dir: str,
     val_dir: str,
     model_name: str = 'resnet50',
-    num_classes: int = 2,
+    num_labels: int = 3,
     batch_size: int = 32,
     learning_rate: float = 0.001,
     num_epochs: int = 20,
     image_size: int = 224,
     freeze_backbone: bool = True,
     checkpoint_dir: str = 'checkpoints',
-    log_dir: str = 'logs'
+    log_dir: str = 'logs',
+    multi_label: bool = True,
+    label_names: List[str] = None
 ):
     """
     Convenience function to train a model.
@@ -284,7 +323,7 @@ def train_model(
         train_dir: Path to training data directory
         val_dir: Path to validation data directory
         model_name: Name of the model architecture
-        num_classes: Number of classes
+        num_labels: Number of labels (for multi-label) or classes (for single-class)
         batch_size: Batch size for training
         learning_rate: Initial learning rate
         num_epochs: Number of training epochs
@@ -292,19 +331,23 @@ def train_model(
         freeze_backbone: Whether to freeze backbone initially
         checkpoint_dir: Directory to save checkpoints
         log_dir: Directory for TensorBoard logs
+        multi_label: Whether to use multi-label classification
+        label_names: List of label names for multi-label classification
     """
     trainer = Trainer(
         train_dir=train_dir,
         val_dir=val_dir,
         model_name=model_name,
-        num_classes=num_classes,
+        num_labels=num_labels,
         batch_size=batch_size,
         learning_rate=learning_rate,
         num_epochs=num_epochs,
         image_size=image_size,
         freeze_backbone=freeze_backbone,
         checkpoint_dir=checkpoint_dir,
-        log_dir=log_dir
+        log_dir=log_dir,
+        multi_label=multi_label,
+        label_names=label_names
     )
     
     history = trainer.train()
@@ -312,14 +355,16 @@ def train_model(
 
 
 if __name__ == '__main__':
-    # Example usage
+    # Example usage for multi-label classification
     train_model(
         train_dir='data/train',
         val_dir='data/val',
         model_name='resnet50',
-        num_classes=2,
+        num_labels=3,
         batch_size=32,
         learning_rate=0.001,
         num_epochs=20,
-        freeze_backbone=True
+        freeze_backbone=True,
+        multi_label=True,
+        label_names=["is_copied", "is_blurry", "is_low_light"]
     )

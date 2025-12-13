@@ -1,4 +1,5 @@
 [
-  "copied",
-  "original"
+  "is_copied",
+  "is_blurry",
+  "is_low_light"
 ]

@@ -11,9 +11,10 @@ data:
 # Model settings
 model:
   name: "resnet50"  # Options: resnet50, resnet18, efficientnet_b0, mobilenet_v3_small
-  num_classes: 2
+  num_labels: 3  # Multi-label: is_copied, is_blurry, is_low_light
   pretrained: true
   freeze_backbone: true  # Start with frozen backbone for feature extraction
+  label_names: ["is_copied", "is_blurry", "is_low_light"]  # Label definitions
 
 # Training settings
 training:

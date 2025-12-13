@@ -103,14 +103,20 @@ def predict_qrcode():
         # 预测
         result = predictor.predict_from_bytes(image_bytes)
         
-        return jsonify({
-            'success': True,
-            'data': {
+        response_data = {'success': True}
+        
+        if 'predictions' in result:
+             # Multi-label format
+             response_data['data'] = result
+        else:
+             # Single-label format (legacy compatibility)
+             response_data['data'] = {
                 'predicted_label': result['predicted_label'],
                 'confidence': result['confidence'],
                 'class_probabilities': result['class_probabilities']
             }
-        })
+            
+        return jsonify(response_data)
     
     except Exception as e:
         return jsonify({

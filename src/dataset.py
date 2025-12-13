@@ -1,10 +1,12 @@
 """
-Dataset and data loading utilities for QR code classification.
+Dataset and data loading utilities for QR code multi-label classification.
 Handles image preprocessing, augmentation, and data loading.
+Supports both single-class and multi-label classification.
 """
 
 import os
-from typing import Tuple, Optional, Union
+import json
+from typing import Tuple, Optional, Union, List, Dict
 import torch
 from torch.utils.data import Dataset, DataLoader
 from torchvision import transforms, datasets
@@ -140,6 +142,143 @@ class QRCodeDataset(Dataset):
         return image, label
 
 
+class QRCodeMultiLabelDataset(Dataset):
+    """
+    Multi-label dataset for QR code images.
+    Supports three binary labels: is_copied, is_blurry, is_low_light
+    
+    Expected annotation format (JSON file):
+    {
+        "image1.jpg": {
+            "is_copied": 1,
+            "is_blurry": 0,
+            "is_low_light": 0
+        },
+        "image2.jpg": {
+            "is_copied": 1,
+            "is_blurry": 1,
+            "is_low_light": 0
+        },
+        ...
+    }
+    
+    Alternative directory structure:
+        data_dir/
+            images/
+                image1.jpg
+                image2.jpg
+            annotations.json
+    """
+    
+    def __init__(
+        self, 
+        data_dir: str, 
+        annotation_file: str = None,
+        transform=None,
+        label_names: List[str] = None
+    ):
+        """
+        Args:
+            data_dir: Root directory containing images
+            annotation_file: Path to JSON annotation file. If None, looks for 'annotations.json' in data_dir
+            transform: Optional transform to be applied on images
+            label_names: List of label names (default: ["is_copied", "is_blurry", "is_low_light"])
+        """
+        self.data_dir = data_dir
+        self.transform = transform
+        self.label_names = label_names or ["is_copied", "is_blurry", "is_low_light"]
+        self.num_labels = len(self.label_names)
+        self.samples = []
+        
+        # Determine annotation file path
+        if annotation_file is None:
+            annotation_file = os.path.join(data_dir, 'annotations.json')
+        
+        self.annotation_file = annotation_file
+        
+        # Load dataset
+        self._load_dataset()
+    
+    def _load_dataset(self):
+        """Load all images and their multi-label annotations from JSON file."""
+        if not os.path.exists(self.annotation_file):
+            raise ValueError(f"Annotation file not found: {self.annotation_file}")
+        
+        # Load annotations
+        with open(self.annotation_file, 'r', encoding='utf-8') as f:
+            annotations = json.load(f)
+        
+        # Process each image
+        for img_name, labels_dict in annotations.items():
+            # Support both absolute and relative paths
+            if os.path.isabs(img_name):
+                img_path = img_name
+            else:
+                # Try multiple possible locations
+                possible_paths = [
+                    os.path.join(self.data_dir, img_name),
+                    os.path.join(self.data_dir, 'images', img_name),
+                    img_name  # If it's already a valid path
+                ]
+                
+                img_path = None
+                for path in possible_paths:
+                    if os.path.exists(path):
+                        img_path = path
+                        break
+                
+                if img_path is None:
+                    print(f"Warning: Image not found: {img_name}, skipping...")
+                    continue
+            
+            # Extract labels in the correct order
+            label_vector = []
+            for label_name in self.label_names:
+                if label_name in labels_dict:
+                    label_vector.append(float(labels_dict[label_name]))
+                else:
+                    # Default to 0 if label not specified
+                    label_vector.append(0.0)
+            
+            self.samples.append((img_path, label_vector))
+        
+        if len(self.samples) == 0:
+            raise ValueError(f"No valid images found in {self.annotation_file}")
+        
+        # Print statistics
+        print(f"Loaded {len(self.samples)} images with multi-label annotations")
+        print(f"Labels: {self.label_names}")
+        
+        # Calculate label statistics
+        label_counts = [0] * self.num_labels
+        for _, labels in self.samples:
+            for i, label_val in enumerate(labels):
+                if label_val > 0.5:  # Consider as positive
+                    label_counts[i] += 1
+        
+        for i, label_name in enumerate(self.label_names):
+            percentage = (label_counts[i] / len(self.samples)) * 100
+            print(f"  - {label_name}: {label_counts[i]} images ({percentage:.1f}%)")
+    
+    def __len__(self):
+        return len(self.samples)
+    
+    def __getitem__(self, idx):
+        img_path, labels = self.samples[idx]
+        
+        # Load image
+        image = Image.open(img_path).convert('RGB')
+        
+        # Apply transforms
+        if self.transform:
+            image = self.transform(image)
+        
+        # Convert labels to tensor
+        labels_tensor = torch.tensor(labels, dtype=torch.float32)
+        
+        return image, labels_tensor
+
+
 def get_transforms(
     image_size: int = 224, 
     augment: bool = True,
@@ -202,10 +341,25 @@ def create_dataloaders(
     batch_size: int = 32,
     image_size: int = 224,
     num_workers: int = 0,
-    backend: str = 'opencv'
-) -> Tuple[DataLoader, DataLoader, list]:
+    backend: str = 'opencv',
+    multi_label: bool = False,
+    label_names: List[str] = None
+) -> Tuple[DataLoader, DataLoader, Union[list, List[str]]]:
     """
     Create training and validation data loaders.
+    
+    Args:
+        train_dir: Path to training data directory
+        val_dir: Path to validation data directory
+        batch_size: Batch size for data loaders
+        image_size: Target image size
+        num_workers: Number of worker processes for data loading
+        backend: 'pil' or 'opencv' for preprocessing
+        multi_label: If True, use multi-label dataset (requires annotations.json)
+        label_names: List of label names for multi-label classification
+        
+    Returns:
+        Tuple of (train_loader, val_loader, classes/label_names)
     """
     # Get transforms (Training usually stays on PIL for augmentation support)
     train_transform = get_transforms(image_size=image_size, augment=True, backend=backend)
@@ -213,13 +367,38 @@ def create_dataloaders(
     # Validation can use PIL or OpenCV, stick to PIL for standard training metrics
     val_transform = get_transforms(image_size=image_size, augment=False, backend=backend)
     
-    # Create datasets
-    train_dataset = QRCodeDataset(train_dir, transform=train_transform)
-    val_dataset = QRCodeDataset(val_dir, transform=val_transform)
-    
-    # Verify classes match
-    if train_dataset.classes != val_dataset.classes:
-        print("Warning: Train and validation datasets have different classes!")
+    # Create datasets based on classification type
+    if multi_label:
+        # Multi-label classification
+        if label_names is None:
+            label_names = ["is_copied", "is_blurry", "is_low_light"]
+        
+        train_dataset = QRCodeMultiLabelDataset(
+            train_dir, 
+            transform=train_transform,
+            label_names=label_names
+        )
+        val_dataset = QRCodeMultiLabelDataset(
+            val_dir, 
+            transform=val_transform,
+            label_names=label_names
+        )
+        
+        # Verify label names match
+        if train_dataset.label_names != val_dataset.label_names:
+            print("Warning: Train and validation datasets have different label names!")
+        
+        metadata = train_dataset.label_names
+    else:
+        # Single-class classification
+        train_dataset = QRCodeDataset(train_dir, transform=train_transform)
+        val_dataset = QRCodeDataset(val_dir, transform=val_transform)
+        
+        # Verify classes match
+        if train_dataset.classes != val_dataset.classes:
+            print("Warning: Train and validation datasets have different classes!")
+        
+        metadata = train_dataset.classes
     
     # Create data loaders
     train_loader = DataLoader(
@@ -238,7 +417,7 @@ def create_dataloaders(
         pin_memory=True if torch.cuda.is_available() else False
     )
     
-    return train_loader, val_loader, train_dataset.classes
+    return train_loader, val_loader, metadata
 
 
 def get_inference_transform(image_size: int = 224, backend: str = 'opencv'):

@@ -33,13 +33,14 @@ class ModelPredictor:
             cls._instance = super().__new__(cls)
         return cls._instance
     
-    def initialize(self, checkpoint_path='checkpoints/best_model.pth', model_name='resnet50'):
+    def initialize(self, checkpoint_path='checkpoints/best_model.pth', model_name='resnet50', multi_label=True):
         """
         初始化模型（服务器启动时调用一次）
         
         Args:
             checkpoint_path: 模型检查点路径
             model_name: 模型名称，默认 resnet50
+            multi_label: 是否开启多标签模式
         """
         if self._predictor is None:
             print("=" * 80)
@@ -48,7 +49,8 @@ class ModelPredictor:
             
             self._predictor = QRCodePredictor(
                 checkpoint_path=checkpoint_path,
-                model_name=model_name
+                model_name=model_name,
+                multi_label=multi_label
             )
             
             print("=" * 80)
@@ -63,21 +65,6 @@ class ModelPredictor:
     def predict(self, image_path: str) -> Dict:
         """
         预测单张图片（从文件路径）
-        
-        Args:
-            image_path: 图片文件路径
-            
-        Returns:
-            预测结果字典
-            {
-                'predicted_class': 0,
-                'predicted_label': 'copied',
-                'confidence': 0.6288,
-                'class_probabilities': {
-                    'copied': 0.6288,
-                    'original': 0.3712
-                }
-            }
         """
         if self._predictor is None:
             raise RuntimeError("Model not initialized. Call initialize() first.")
@@ -85,15 +72,7 @@ class ModelPredictor:
         return self._predictor.predict_image(image_path, return_probs=True)
     
     def predict_from_bytes(self, image_bytes: bytes) -> Dict:
-        """
-        从字节流预测（适用于文件上传）
-        
-        Args:
-            image_bytes: 图片字节流
-            
-        Returns:
-            预测结果字典
-        """
+        """从字节流预测（适用于文件上传）"""
         if self._predictor is None:
             raise RuntimeError("Model not initialized. Call initialize() first.")
         
@@ -106,32 +85,42 @@ class ModelPredictor:
         # 推理
         with torch.no_grad():
             outputs = self._predictor.model(image_tensor)
-            probs = F.softmax(outputs, dim=1)
-            confidence, predicted = torch.max(probs, 1)
-        
-        predicted_class = predicted.item()
-        confidence_score = confidence.item()
-        
-        return {
-            'predicted_class': predicted_class,
-            'predicted_label': self._predictor.class_names[predicted_class],
-            'confidence': confidence_score,
-            'class_probabilities': {
-                self._predictor.class_names[i]: probs[0][i].item()
-                for i in range(len(self._predictor.class_names))
-            }
-        }
+            
+            if self._predictor.multi_label:
+                probs = torch.sigmoid(outputs)
+                predictions = (probs >= self._predictor.threshold).float()
+                
+                result = {
+                    'predictions': {},
+                    'probabilities': {}
+                }
+                
+                for i, label_name in enumerate(self._predictor.label_names):
+                    result['predictions'][label_name] = {
+                        'value': int(predictions[0][i].item()),
+                        'probability': float(probs[0][i].item())
+                    }
+                    result['probabilities'][label_name] = float(probs[0][i].item())
+                return result
+            else:
+                probs = F.softmax(outputs, dim=1)
+                confidence, predicted = torch.max(probs, 1)
+            
+                predicted_class = predicted.item()
+                confidence_score = confidence.item()
+                
+                return {
+                    'predicted_class': predicted_class,
+                    'predicted_label': self._predictor.label_names[predicted_class],
+                    'confidence': confidence_score,
+                    'class_probabilities': {
+                        self._predictor.label_names[i]: probs[0][i].item()
+                        for i in range(len(self._predictor.label_names))
+                    }
+                }
     
     def predict_batch_from_bytes(self, image_bytes_list: List[bytes]) -> List[Dict]:
-        """
-        批量预测多张图片（从字节流）
-        
-        Args:
-            image_bytes_list: 图片字节流列表
-            
-        Returns:
-            预测结果列表
-        """
+        """批量预测多张图片（从字节流）"""
         if self._predictor is None:
             raise RuntimeError("Model not initialized. Call initialize() first.")
         
@@ -147,31 +136,40 @@ class ModelPredictor:
         
         with torch.no_grad():
             outputs = self._predictor.model(batch_tensor)
-            probs = F.softmax(outputs, dim=1)
-            confidences, predictions = torch.max(probs, 1)
+            
+            if self._predictor.multi_label:
+                probs = torch.sigmoid(outputs)
+                predictions = (probs >= self._predictor.threshold).float()
+                results = []
+                for i in range(len(images)):
+                    res = {'predictions': {}, 'probabilities': {}}
+                    for j, label_name in enumerate(self._predictor.label_names):
+                        res['predictions'][label_name] = {
+                            'value': int(predictions[i][j].item()),
+                            'probability': float(probs[i][j].item())
+                        }
+                        res['probabilities'][label_name] = float(probs[i][j].item())
+                    results.append(res)
+                return results
+            else:
+                probs = F.softmax(outputs, dim=1)
+                confidences, predictions = torch.max(probs, 1)
         
-        # 构建结果
-        results = []
-        for i in range(len(images)):
-            results.append({
-                'predicted_class': predictions[i].item(),
-                'predicted_label': self._predictor.class_names[predictions[i].item()],
-                'confidence': confidences[i].item(),
-                'class_probabilities': {
-                    self._predictor.class_names[j]: probs[i][j].item()
-                    for j in range(len(self._predictor.class_names))
-                }
-            })
-        
-        return results
+                results = []
+                for i in range(len(images)):
+                    results.append({
+                        'predicted_class': predictions[i].item(),
+                        'predicted_label': self._predictor.label_names[predictions[i].item()],
+                        'confidence': confidences[i].item(),
+                        'class_probabilities': {
+                            self._predictor.label_names[j]: probs[i][j].item()
+                            for j in range(len(self._predictor.label_names))
+                        }
+                    })
+                return results
     
     def get_model_info(self) -> Dict:
-        """
-        获取模型信息
-        
-        Returns:
-            模型信息字典
-        """
+        """获取模型信息"""
         if self._predictor is None:
             return {
                 'initialized': False,
@@ -181,10 +179,11 @@ class ModelPredictor:
         return {
             'initialized': True,
             'model_name': 'resnet50',
-            'num_classes': len(self._predictor.class_names),
-            'class_names': self._predictor.class_names,
+            'num_classes': len(self._predictor.label_names),
+            'class_names': self._predictor.label_names,
             'device': str(self._predictor.device),
-            'image_size': self._predictor.image_size
+            'image_size': self._predictor.image_size,
+            'multi_label': self._predictor.multi_label
         }
 
 

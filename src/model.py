@@ -1,6 +1,7 @@
 """
-Model definition and transfer learning setup for QR code classification.
+Model definition and transfer learning setup for QR code multi-label classification.
 Uses pretrained models from torchvision with custom classifier heads.
+Supports multi-label classification for: is_copied, is_blurry, is_low_light.
 """
 
 import torch
@@ -11,20 +12,21 @@ from typing import Optional
 
 class QRCodeClassifier(nn.Module):
     """
-    Transfer learning model for QR code classification.
+    Transfer learning model for QR code multi-label classification.
     Uses a pretrained backbone with a custom classifier head.
+    Outputs 3 independent binary predictions: is_copied, is_blurry, is_low_light.
     """
     
     def __init__(
         self,
-        num_classes: int = 2,
+        num_labels: int = 3,
         model_name: str = 'resnet50',
         pretrained: bool = True,
         freeze_backbone: bool = False
     ):
         """
         Args:
-            num_classes: Number of output classes
+            num_labels: Number of output labels (default: 3 for is_copied, is_blurry, is_low_light)
             model_name: Name of the backbone model ('resnet50', 'resnet18', 'efficientnet_b0', etc.)
             pretrained: Whether to use pretrained weights
             freeze_backbone: Whether to freeze backbone weights (feature extraction mode)
@@ -32,7 +34,7 @@ class QRCodeClassifier(nn.Module):
         super(QRCodeClassifier, self).__init__()
         
         self.model_name = model_name
-        self.num_classes = num_classes
+        self.num_labels = num_labels
         
         # Load pretrained model
         if model_name == 'resnet50':
@@ -64,17 +66,19 @@ class QRCodeClassifier(nn.Module):
                 param.requires_grad = False
             print(f"Backbone frozen - only training classifier head")
         
-        # Custom classifier head
+        # Custom classifier head for multi-label classification
+        # Output layer has num_labels neurons (one per label)
+        # No sigmoid here - will use BCEWithLogitsLoss which includes sigmoid
         self.classifier = nn.Sequential(
             nn.Dropout(0.5),
             nn.Linear(num_features, 512),
             nn.ReLU(),
             nn.Dropout(0.3),
-            nn.Linear(512, num_classes)
+            nn.Linear(512, num_labels)
         )
         
         print(f"Model created: {model_name}")
-        print(f"Number of classes: {num_classes}")
+        print(f"Number of labels: {num_labels} (multi-label classification)")
         print(f"Feature dimension: {num_features}")
     
     def forward(self, x):
@@ -113,17 +117,17 @@ class QRCodeClassifier(nn.Module):
 
 
 def create_model(
-    num_classes: int = 2,
+    num_labels: int = 3,
     model_name: str = 'resnet50',
     pretrained: bool = True,
     freeze_backbone: bool = False,
     device: str = 'cpu'
 ) -> QRCodeClassifier:
     """
-    Create and initialize a QR code classifier model.
+    Create and initialize a QR code multi-label classifier model.
     
     Args:
-        num_classes: Number of output classes
+        num_labels: Number of output labels (default: 3 for is_copied, is_blurry, is_low_light)
         model_name: Name of the backbone model
         pretrained: Whether to use pretrained weights
         freeze_backbone: Whether to freeze backbone weights
@@ -133,7 +137,7 @@ def create_model(
         QRCodeClassifier model
     """
     model = QRCodeClassifier(
-        num_classes=num_classes,
+        num_labels=num_labels,
         model_name=model_name,
         pretrained=pretrained,
         freeze_backbone=freeze_backbone
@@ -147,13 +151,13 @@ def create_model(
     return model
 
 
-def load_model_for_inference(checkpoint_path: str, num_classes: int = 2, model_name: str = 'resnet50', device: str = 'cpu'):
+def load_model_for_inference(checkpoint_path: str, num_labels: int = 3, model_name: str = 'resnet50', device: str = 'cpu'):
     """
     Load a trained model for inference.
     
     Args:
         checkpoint_path: Path to model checkpoint
-        num_classes: Number of classes
+        num_labels: Number of labels (default: 3 for multi-label classification)
         model_name: Name of the model architecture
         device: Device to load model on
         
@@ -161,7 +165,7 @@ def load_model_for_inference(checkpoint_path: str, num_classes: int = 2, model_n
         Loaded model in evaluation mode
     """
     model = create_model(
-        num_classes=num_classes,
+        num_labels=num_labels,
         model_name=model_name,
         pretrained=False,
         freeze_backbone=False,
@@ -174,6 +178,7 @@ def load_model_for_inference(checkpoint_path: str, num_classes: int = 2, model_n
     
     print(f"Model loaded from {checkpoint_path}")
     print(f"Checkpoint epoch: {checkpoint['epoch']}")
-    print(f"Checkpoint accuracy: {checkpoint['accuracy']:.4f}")
+    if 'mean_accuracy' in checkpoint:
+        print(f"Checkpoint mean accuracy: {checkpoint['mean_accuracy']:.4f}")
     
     return model
