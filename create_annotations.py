@@ -5,8 +5,10 @@ Creates a template annotations.json file that users can fill in.
 
 import json
 import os
+import re
+import shutil
 from pathlib import Path
-from typing import List, Dict
+from typing import List, Dict, Tuple, Optional
 
 
 def create_annotation_template(
