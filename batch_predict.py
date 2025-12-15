@@ -23,7 +23,7 @@ def batch_predict(image_dir, checkpoint_path='checkpoints/best_model.pth', move_
     # 创建预测器
     predictor = QRCodePredictor(
         checkpoint_path=checkpoint_path,
-        model_name='resnet50',
+        model_name='convnextv2_tiny',
         backend='opencv',
         multi_label=multi_label
     )

@@ -11,6 +11,44 @@ from pathlib import Path
 from typing import List, Dict, Tuple, Optional
 
 
+def parse_filename_labels(filename: str, label_names: List[str]) -> Tuple[bool, Dict[str, int]]:
+    """
+    Parse labels from filename pattern _XYZ where X, Y, Z are 0 or 1.
+
+    Args:
+        filename: Image filename (e.g., "image_101.jpg")
+        label_names: List of label names (should have 3 elements: [is_copied, is_low_light, is_blurry])
+
+    Returns:
+        Tuple of (is_valid, labels_dict)
+        - is_valid: True if filename matches pattern, False otherwise
+        - labels_dict: Dictionary mapping label names to values (0 or 1)
+    """
+    # Remove file extension
+    name_without_ext = os.path.splitext(filename)[0]
+
+    # Pattern: ends with _XXX where X is 0 or 1
+    pattern = r'_([01])([01])([01])$'
+    match = re.search(pattern, name_without_ext)
+
+    if not match:
+        return False, {}
+
+    # Extract the three digits
+    # Position mapping: is_copied, is_low_light, is_blurry
+    values = [int(match.group(1)), int(match.group(2)), int(match.group(3))]
+
+    # Create labels dictionary
+    labels = {}
+    for i, label_name in enumerate(label_names):
+        if i < len(values):
+            labels[label_name] = values[i]
+        else:
+            labels[label_name] = 0
+
+    return True, labels
+
+
 def create_annotation_template(
     image_dir: str,
     output_file: str = None,
@@ -18,25 +56,27 @@ def create_annotation_template(
 ) -> str:
     """
     Create an annotation template file for all images in a directory.
-    
+    Automatically sets labels based on filename pattern _XYZ where X,Y,Z are 0 or 1.
+    Invalid files (without pattern) are moved to invalid/ subdirectory.
+
     Args:
         image_dir: Directory containing images
         output_file: Path to save annotations.json (default: image_dir/annotations.json)
-        label_names: List of label names (default: ["is_copied", "is_blurry", "is_low_light"])
-        
+        label_names: List of label names (default: ["is_copied", "is_low_light", "is_blurry"])
+
     Returns:
         Path to the created annotation file
     """
     if label_names is None:
-        label_names = ["is_copied", "is_blurry", "is_low_light"]
-    
+        label_names = ["is_copied", "is_low_light", "is_blurry"]
+
     if output_file is None:
         output_file = os.path.join(image_dir, 'annotations.json')
-    
+
     # Find all image files
     image_extensions = {'.jpg', '.jpeg', '.png', '.bmp', '.gif', '.tiff', '.webp'}
-    image_dir_path = Path(image_dir)
-    
+    image_dir_path = Path(image_dir).resolve()  # Convert to absolute path
+
     # Check if images are in a subdirectory called 'images'
     if (image_dir_path / 'images').exists():
         search_dir = image_dir_path / 'images'
@@ -44,42 +84,118 @@ def create_annotation_template(
     else:
         search_dir = image_dir_path
         use_images_subdir = False
-    
-    image_files = []
+
+    # Create invalid directory path
+    invalid_dir = search_dir / 'invalid'
+
+    # Collect image files and remove duplicates
+    image_files = set()  # Use set to automatically handle duplicates
     for ext in image_extensions:
-        image_files.extend(search_dir.glob(f'*{ext}'))
-        image_files.extend(search_dir.glob(f'*{ext.upper()}'))
-    
+        # glob() on Windows may return same file for both .jpg and .JPG
+        image_files.update(search_dir.glob(f'*{ext}'))
+        image_files.update(search_dir.glob(f'*{ext.upper()}'))
+
+    # Convert set back to list
+    image_files = list(image_files)
+
     if len(image_files) == 0:
         print(f"Warning: No images found in {search_dir}")
         return None
-    
+
+    # Statistics
+    stats = {
+        'total_files': len(image_files),
+        'valid_files': 0,
+        'invalid_files': 0,
+        'label_counts': {label: 0 for label in label_names}
+    }
+
+    # Create invalid directory if needed
+    invalid_dir = search_dir / 'invalid'
+
     # Create annotations dictionary
     annotations = {}
+    invalid_files = []
+
     for img_path in sorted(image_files):
-        # Use relative path if images are in subdirectory
-        if use_images_subdir:
-            img_name = img_path.name
+        img_name = img_path.name
+
+        # Parse filename to get labels
+        is_valid, labels = parse_filename_labels(img_name, label_names)
+
+        if is_valid:
+            # Valid filename - add to annotations
+            annotations[img_name] = labels
+            stats['valid_files'] += 1
+
+            # Update label statistics
+            for label_name, value in labels.items():
+                if value == 1:
+                    stats['label_counts'][label_name] += 1
         else:
-            img_name = img_path.name
-        
-        # Initialize all labels to 0 (user needs to fill in correct values)
-        annotations[img_name] = {label: 0 for label in label_names}
-    
+            # Invalid filename - mark for moving
+            invalid_files.append(img_path)
+            stats['invalid_files'] += 1
+
+    # Move invalid files to invalid directory
+    if invalid_files:
+        os.makedirs(invalid_dir, exist_ok=True)
+        print(f"\n⚠️  Moving {len(invalid_files)} invalid files to {invalid_dir}:")
+        for img_path in invalid_files:
+            # Check if source file still exists (may have been moved in a previous run)
+            if not img_path.exists():
+                print(f"  ✗ Skipped {img_path.name}: file not found (may have been moved already)")
+                stats['invalid_files'] -= 1
+                continue
+
+            dest_path = invalid_dir / img_path.name
+            # Handle duplicate filenames
+            if dest_path.exists():
+                base_name = img_path.stem
+                ext = img_path.suffix
+                counter = 1
+                while (invalid_dir / f"{base_name}_{counter}{ext}").exists():
+                    counter += 1
+                dest_path = invalid_dir / f"{base_name}_{counter}{ext}"
+
+            try:
+                shutil.move(str(img_path), str(dest_path))
+                print(f"  - {img_path.name} -> {dest_path.name}")
+            except Exception as e:
+                print(f"  ✗ Failed to move {img_path.name}: {e}")
+                stats['invalid_files'] -= 1  # Adjust count if move failed
+
     # Save to file
-    os.makedirs(os.path.dirname(output_file) if os.path.dirname(output_file) else '.', exist_ok=True)
-    with open(output_file, 'w', encoding='utf-8') as f:
-        json.dump(annotations, f, indent=4, ensure_ascii=False)
-    
-    print(f"✓ Created annotation template: {output_file}")
-    print(f"  Found {len(image_files)} images")
-    print(f"  Labels: {label_names}")
-    print(f"\nNext steps:")
-    print(f"  1. Open {output_file}")
-    print(f"  2. Set label values to 0 or 1 for each image")
-    print(f"  3. Save the file")
-    
-    return output_file
+    if annotations:
+        os.makedirs(os.path.dirname(output_file) if os.path.dirname(output_file) else '.', exist_ok=True)
+        with open(output_file, 'w', encoding='utf-8') as f:
+            json.dump(annotations, f, indent=4, ensure_ascii=False)
+
+    # Print statistics
+    print(f"\n{'='*60}")
+    print(f"Annotation Creation Summary")
+    print(f"{'='*60}")
+    print(f"Total files processed:     {stats['total_files']}")
+    print(f"Valid files:               {stats['valid_files']}")
+    print(f"Invalid files (moved):     {stats['invalid_files']}")
+
+    if stats['valid_files'] > 0:
+        print(f"\nLabel Statistics:")
+        for label_name, count in stats['label_counts'].items():
+            percentage = (count / stats['valid_files']) * 100
+            print(f"  - {label_name:15s}: {count:4d} ({percentage:5.1f}%)")
+
+        print(f"\n✓ Created annotation file: {output_file}")
+        print(f"  Total annotations: {len(annotations)}")
+    else:
+        print(f"\n⚠️  No valid files found. Annotation file not created.")
+
+    if stats['invalid_files'] > 0:
+        print(f"\n⚠️  Invalid files moved to: {invalid_dir}")
+
+    print(f"{'='*60}\n")
+
+    return output_file if annotations else None
 
 
 def validate_annotations(annotation_file: str, label_names: List[str] = None) -> bool:
