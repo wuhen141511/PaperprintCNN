@@ -87,7 +87,7 @@ Examples:
     parser.add_argument(
         '--opset',
         type=int,
-        default=11,
+        default=13,
         help='ONNX opset version. Default: 11 (compatible with most OpenCV versions)'
     )
     
