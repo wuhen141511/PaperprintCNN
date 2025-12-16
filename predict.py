@@ -24,7 +24,7 @@ if __name__ == '__main__':
     result = predict_single_image(
         image_path=image_path,
         checkpoint_path=checkpoint_path,
-        model_name='resnet50',
+        model_name='convnextv2_tiny',
         visualize=True
     )
     
