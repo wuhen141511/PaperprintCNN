@@ -366,5 +366,5 @@ if __name__ == '__main__':
         num_epochs=20,
         freeze_backbone=True,
         multi_label=True,
-        label_names=["is_copied", "is_blurry", "is_low_light"]
+        label_names=["is_copied", "is_low_light", "is_blurry"]
     )

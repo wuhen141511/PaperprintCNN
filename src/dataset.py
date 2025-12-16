@@ -186,7 +186,7 @@ class QRCodeMultiLabelDataset(Dataset):
         """
         self.data_dir = data_dir
         self.transform = transform
-        self.label_names = label_names or ["is_copied", "is_blurry", "is_low_light"]
+        self.label_names = label_names or ["is_copied", "is_low_light", "is_blurry"]
         self.num_labels = len(self.label_names)
         self.samples = []
         
@@ -371,7 +371,7 @@ def create_dataloaders(
     if multi_label:
         # Multi-label classification
         if label_names is None:
-            label_names = ["is_copied", "is_blurry", "is_low_light"]
+            label_names = ["is_copied", "is_low_light", "is_blurry"]
         
         train_dataset = QRCodeMultiLabelDataset(
             train_dir, 

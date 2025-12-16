@@ -14,7 +14,7 @@ model:
   num_labels: 3  # Multi-label: is_copied, is_blurry, is_low_light
   pretrained: true
   freeze_backbone: true  # Start with frozen backbone for feature extraction
-  label_names: ["is_copied", "is_blurry", "is_low_light"]  # Label definitions
+  label_names: ["is_copied", "is_low_light", "is_blurry"]  # Label definitions
 
 # Training settings
 training:

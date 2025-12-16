@@ -210,7 +210,7 @@ def validate_annotations(annotation_file: str, label_names: List[str] = None) ->
         True if valid, False otherwise
     """
     if label_names is None:
-        label_names = ["is_copied", "is_blurry", "is_low_light"]
+        label_names = ["is_copied", "is_low_light", "is_blurry"]
     
     if not os.path.exists(annotation_file):
         print(f"❌ Error: Annotation file not found: {annotation_file}")

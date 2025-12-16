@@ -61,7 +61,7 @@ class QRCodePredictor:
                     label_names = json.load(f)
             else:
                 if multi_label:
-                    label_names = ["is_copied", "is_blurry", "is_low_light"]  # Default for multi-label
+                    label_names = ["is_copied", "is_low_light", "is_blurry"]  # Default for multi-label
                 else:
                     label_names = ['Class 0', 'Class 1']  # Default for single-class
         

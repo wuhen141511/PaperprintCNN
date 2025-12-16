@@ -31,7 +31,7 @@ if __name__ == '__main__':
         checkpoint_dir='checkpoints',
         log_dir='logs',
         multi_label=True,
-        label_names=["is_copied", "is_blurry", "is_low_light"]
+        label_names=["is_copied", "is_low_light", "is_blurry"]
     )
     
     print("\n" + "="*60)
