@@ -15,7 +15,7 @@ import json
 
 from src.model import create_model
 from src.dataset import create_dataloaders
-from src.utils import set_seed, get_device, save_checkpoint, calculate_metrics, calculate_multilabel_metrics
+from src.utils import set_seed, get_device, save_checkpoint, load_checkpoint, calculate_metrics, calculate_multilabel_metrics
 
 
 class Trainer:
@@ -37,7 +37,8 @@ class Trainer:
         device: str = None,
         seed: int = 42,
         multi_label: bool = True,
-        label_names: List[str] = None
+        label_names: List[str] = None,
+        load_checkpoint_path: str = None
     ):
         """
         Initialize trainer.
@@ -58,6 +59,7 @@ class Trainer:
             seed: Random seed for reproducibility
             multi_label: Whether to use multi-label classification
             label_names: List of label names for multi-label classification
+            load_checkpoint_path: Optional path to checkpoint file to resume training
         """
         # Set random seed
         set_seed(seed)
@@ -127,6 +129,27 @@ class Trainer:
         # Best model tracking
         self.best_val_acc = 0.0
         self.best_epoch = 0
+        self.start_epoch = 1
+        
+        # Load checkpoint if provided
+        if load_checkpoint_path is not None:
+            if os.path.exists(load_checkpoint_path):
+                self.model, self.optimizer, loaded_epoch, loaded_loss, loaded_acc = load_checkpoint(
+                    self.model, self.optimizer, load_checkpoint_path, self.device
+                )
+                self.start_epoch = loaded_epoch + 1  # Resume from next epoch
+                self.best_val_acc = loaded_acc
+                self.best_epoch = loaded_epoch
+                print(f"Resuming training from epoch {self.start_epoch}")
+                
+                # Load training history if available
+                history_path = os.path.join(os.path.dirname(load_checkpoint_path), 'training_history.json')
+                if os.path.exists(history_path):
+                    with open(history_path, 'r') as f:
+                        self.history = json.load(f)
+                    print(f"Loaded training history from {history_path}")
+            else:
+                print(f"Warning: Checkpoint file not found at {load_checkpoint_path}. Starting from scratch.")
         
         print(f"\nClass names: {self.class_names}")
         print(f"Training samples: {len(self.train_loader.dataset)}")
@@ -227,10 +250,13 @@ class Trainer:
     def train(self):
         """Main training loop."""
         print(f"\n{'='*60}")
-        print(f"Starting training for {self.num_epochs} epochs")
+        if self.start_epoch > 1:
+            print(f"Resuming training from epoch {self.start_epoch} to {self.num_epochs}")
+        else:
+            print(f"Starting training for {self.num_epochs} epochs")
         print(f"{'='*60}\n")
         
-        for epoch in range(1, self.num_epochs + 1):
+        for epoch in range(self.start_epoch, self.num_epochs + 1):
             # Train
             train_loss, train_acc = self.train_epoch(epoch)
             
@@ -314,7 +340,8 @@ def train_model(
     checkpoint_dir: str = 'checkpoints',
     log_dir: str = 'logs',
     multi_label: bool = True,
-    label_names: List[str] = None
+    label_names: List[str] = None,
+    load_checkpoint_path: str = None
 ):
     """
     Convenience function to train a model.
@@ -333,6 +360,7 @@ def train_model(
         log_dir: Directory for TensorBoard logs
         multi_label: Whether to use multi-label classification
         label_names: List of label names for multi-label classification
+        load_checkpoint_path: Optional path to checkpoint file to resume training
     """
     trainer = Trainer(
         train_dir=train_dir,
@@ -347,7 +375,8 @@ def train_model(
         checkpoint_dir=checkpoint_dir,
         log_dir=log_dir,
         multi_label=multi_label,
-        label_names=label_names
+        label_names=label_names,
+        load_checkpoint_path=load_checkpoint_path
     )
     
     history = trainer.train()

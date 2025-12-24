@@ -18,6 +18,7 @@ if __name__ == '__main__':
     print("="*60 + "\n")
     
     # Train with default settings (Multi-Label)
+    # Set load_checkpoint_path to resume training from a checkpoint
     history = train_model(
         train_dir='data/train',
         val_dir='data/val',
@@ -31,7 +32,8 @@ if __name__ == '__main__':
         checkpoint_dir='checkpoints',
         log_dir='logs',
         multi_label=True,
-        label_names=["is_copied", "is_low_light", "is_blurry"]
+        label_names=["is_copied", "is_low_light", "is_blurry"],
+        load_checkpoint_path=None  # Set to checkpoint path to resume training，default is None
     )
     
     print("\n" + "="*60)
