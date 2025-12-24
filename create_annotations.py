@@ -327,13 +327,14 @@ def merge_annotations(
 
 if __name__ == '__main__':
     import argparse
+    import sys
     
     parser = argparse.ArgumentParser(description='Create and manage annotation files for multi-label classification')
     subparsers = parser.add_subparsers(dest='command', help='Command to execute')
     
     # Create template command
     create_parser = subparsers.add_parser('create', help='Create annotation template')
-    create_parser.add_argument('image_dir', help='Directory containing images')
+    create_parser.add_argument('--image_dir', '-i', default='./data/train', help='Directory containing images')
     create_parser.add_argument('--output', '-o', help='Output annotation file path')
     create_parser.add_argument('--labels', '-l', nargs='+', help='Label names')
     
@@ -345,7 +346,11 @@ if __name__ == '__main__':
     # Merge command
     merge_parser = subparsers.add_parser('merge', help='Merge multiple annotation files')
     merge_parser.add_argument('annotation_files', nargs='+', help='Annotation files to merge')
-    merge_parser.add_argument('--output', '-o', required=True, help='Output merged annotation file')
+    merge_parser.add_argument('--output', '-o', help='Output merged file path')
+    
+    # Set default command if none provided
+    if len(sys.argv) == 1:
+        sys.argv.append('create')
     
     args = parser.parse_args()
     
