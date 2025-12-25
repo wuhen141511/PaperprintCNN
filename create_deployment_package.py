@@ -37,17 +37,9 @@ def create_deployment_package():
         'src/utils.py': '工具函数',
         
         # 文档
-        'QUICKSTART.md': '快速开始指南',
-        'INTEGRATION_GUIDE.md': '完整集成指南',
+        'doc/QUICKSTART.md': '快速开始指南',
+        'doc/INTEGRATION_GUIDE.md': '完整集成指南',
         'README.md': '项目说明',
-        
-        # 示例代码
-        'examples/flask_api.py': 'Flask API 示例',
-        'examples/fastapi_api.py': 'FastAPI 示例',
-        'examples/api_client.py': '客户端示例',
-        
-        # 测试工具
-        'test_api.py': 'API 测试脚本',
     }
     
     # 可选文件（如果存在则包含）
