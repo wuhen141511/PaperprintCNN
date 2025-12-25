@@ -1,5 +1,6 @@
 # Configuration for QR Code Classification Training
 
+
 # Data settings
 data:
   train_dir: "data/train"
