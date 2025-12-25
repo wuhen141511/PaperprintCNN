@@ -301,40 +301,39 @@ class QRCodeMultiLabelDataset(Dataset):
         img_path, labels = self.samples[idx]
         
         # Load image
-        image = Image.open(img_path).convert('RGB')
+        image = Image.open(img_path)
         
-        # Initialize registrator if needed
-        if self.registrator is None:
-            self.registrator = QRCodeRegistrator(self.wqmodules_dir)
+        if image.mode == 'RGBA':
+            # Directly use 4-channel image (e.g., PNG with alpha)
+            image_4c = image
+        else:
+            # Handle 1-channel or 3-channel images (e.g., JPGs) by registering 4th channel
+            image = image.convert('RGB')
             
-        # Get 4th channel
-        # We need numpy array for processing
-        img_np = np.array(image)
-        # Note: PIL Open is RGB, OpenCV uses BGR. 
-        # But our registrator uses detector which expects... OpenCV usually BGR.
-        # However, wechat_qrcode works on grayscale or BGR. 
-        # Let's convert to BGR for the detector to be safe/consistent with cv2.imread
-        img_bgr = cv2.cvtColor(img_np, cv2.COLOR_RGB2BGR)
-        
-        fourth_channel = self.registrator.get_fourth_channel(img_bgr, self.register_dir)
-        
-        # Merge channels: RGB + Gray -> 4 channels
-        # Stack depth-wise
-        # img_np is (H, W, 3), fourth_channel is (H, W) -> expand dict
-        if fourth_channel.shape != img_np.shape[:2]:
-             # Resize 4th channel to match if strictly needed, though registrator should warp to size
-             fourth_channel = cv2.resize(fourth_channel, (img_np.shape[1], img_np.shape[0]))
-             
-        combined_img = np.dstack((img_np, fourth_channel))
-        
-        # Convert back to PIL for transforms?
-        # Most PIL transforms support 4 channels (RGBA) or I/L modes. 
-        # RGBA expects Alpha. We are abusing Alpha channel.
-        # But wait, common transforms like ColorJitter might mess up the 4th channel if treated as Alpha (it doesn't jitter alpha).
-        # This is actually GOOD - we don't want to jitter the reference image color (it's grayscale).
-        # However, ToTensor will scale [0, 255] -> [0, 1].
-        
-        image_4c = Image.fromarray(combined_img, 'RGBA')
+            # Initialize registrator if needed
+            if self.registrator is None:
+                self.registrator = QRCodeRegistrator(self.wqmodules_dir)
+                
+            # Get 4th channel
+            # We need numpy array for processing
+            img_np = np.array(image)
+            # Note: PIL Open is RGB, OpenCV uses BGR. 
+            # But our registrator uses detector which expects OpenCV usually BGR.
+            img_bgr = cv2.cvtColor(img_np, cv2.COLOR_RGB2BGR)
+            
+            fourth_channel = self.registrator.get_fourth_channel(img_bgr, self.register_dir)
+            
+            # Merge channels: RGB + Gray -> 4 channels
+            if fourth_channel.shape != img_np.shape[:2]:
+                 # Resize 4th channel to match if strictly needed
+                 fourth_channel = cv2.resize(fourth_channel, (img_np.shape[1], img_np.shape[0]))
+                 
+            combined_img = np.dstack((img_np, fourth_channel))
+            
+            # Convert back to PIL for transforms
+            # Most PIL transforms support 4 channels (RGBA).
+            # We are using the Alpha channel as our registration channel.
+            image_4c = Image.fromarray(combined_img, 'RGBA')
         
         # Apply transforms
         if self.transform:
