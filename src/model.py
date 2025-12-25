@@ -9,6 +9,74 @@ import torch.nn as nn
 from torchvision import models
 from typing import Optional
 
+def _patch_first_layer(layer, in_channels: int):
+    """
+    Patch the first convolution layer to accept arbitrary input channels.
+    Copies weights from the first 3 channels to new channels if increasing.
+    """
+    if layer.in_channels == in_channels:
+        return
+        
+    print(f"Patching first layer: {layer.in_channels} -> {in_channels} channels")
+    
+    # Create new layer with same parameters but new in_channels
+    new_layer = nn.Conv2d(
+        in_channels=in_channels,
+        out_channels=layer.out_channels,
+        kernel_size=layer.kernel_size,
+        stride=layer.stride,
+        padding=layer.padding,
+        bias=layer.bias is not None,
+        padding_mode=layer.padding_mode,
+        dilation=layer.dilation,
+        groups=layer.groups # Note: groups might need adjustment if it was input-dependent, but usually 1 for first layer
+    )
+    
+    # Initialize weights
+    with torch.no_grad():
+        if layer.bias is not None:
+            new_layer.bias = layer.bias
+            
+        # Copy existing weights
+        # layer.weight shape: (out, in, k, k)
+        # If new in_channels > old, we copy old to first few, and init rest
+        src_channels = min(layer.in_channels, in_channels)
+        new_layer.weight[:, :src_channels] = layer.weight[:, :src_channels]
+        
+        # Initialize new channels (e.g. with mean of RGB weights or similar)
+        # For simplicity, we can copy the mean of RGB weights to the 4th channel
+        # or just random init (standard). Pretrained weights usually expect normalized inputs.
+        # If we just randomly init, it will learn. 
+        # But commonly we reuse one of the channels or average.
+        if in_channels > layer.in_channels:
+            # Average of original channels
+            avg_weight = torch.mean(layer.weight, dim=1, keepdim=True)
+            # Assign to extra channels
+            for i in range(layer.in_channels, in_channels):
+                new_layer.weight[:, i:i+1] = avg_weight
+                
+    # Replace weights in place? No, we need to return new layer or modify object passing in.
+    # The caller passed 'self.backbone.conv1'. This is an object reference.
+    # We cannot replace the object reference in the parent by just assigning to 'layer'.
+    # We need to modify the parent.
+    # The caller code was: 
+    # _patch_first_layer(self.backbone.conv1, in_channels)
+    # This won't work because we can't replace the layer in the module this way.
+    
+    # Correction: The caller logic needs to assign the result.
+    # But checking my previous edit:
+    # _patch_first_layer(self.backbone.conv1, in_channels)
+    # This implies I need to modify the layer IN PLACE or Return it and assign it.
+    
+    # Modification in place (modifying internals of the conv2d object):
+    layer.in_channels = in_channels
+    layer.weight = nn.Parameter(new_layer.weight)
+    if layer.bias is not None:
+        layer.bias = nn.Parameter(new_layer.bias)
+    # verify strictly
+    assert layer.weight.shape[1] == in_channels
+
+
 
 class QRCodeClassifier(nn.Module):
     """
@@ -22,7 +90,8 @@ class QRCodeClassifier(nn.Module):
         num_labels: int = 3,
         model_name: str = 'resnet50',
         pretrained: bool = True,
-        freeze_backbone: bool = False
+        freeze_backbone: bool = False,
+        in_channels: int = 4
     ):
         """
         Args:
@@ -30,11 +99,13 @@ class QRCodeClassifier(nn.Module):
             model_name: Name of the backbone model ('resnet50', 'resnet18', 'efficientnet_b0', etc.)
             pretrained: Whether to use pretrained weights
             freeze_backbone: Whether to freeze backbone weights (feature extraction mode)
+            in_channels: Number of input channels (default: 4 for RGB + Registered)
         """
         super(QRCodeClassifier, self).__init__()
         
         self.model_name = model_name
         self.num_labels = num_labels
+        self.in_channels = in_channels
         
         # Load pretrained model
         if model_name == 'resnet50':
@@ -42,26 +113,45 @@ class QRCodeClassifier(nn.Module):
             num_features = self.backbone.fc.in_features
             self.backbone.fc = nn.Identity()  # Remove original classifier
             
+            # Patch first layer if needed
+            if in_channels != 3:
+                _patch_first_layer(self.backbone.conv1, in_channels)
+                
         elif model_name == 'resnet18':
             self.backbone = models.resnet18(weights=models.ResNet18_Weights.IMAGENET1K_V1 if pretrained else None)
             num_features = self.backbone.fc.in_features
             self.backbone.fc = nn.Identity()
+            
+            if in_channels != 3:
+                _patch_first_layer(self.backbone.conv1, in_channels)
             
         elif model_name == 'efficientnet_b0':
             self.backbone = models.efficientnet_b0(weights=models.EfficientNet_B0_Weights.IMAGENET1K_V1 if pretrained else None)
             num_features = self.backbone.classifier[1].in_features
             self.backbone.classifier = nn.Identity()
             
+            if in_channels != 3:
+                _patch_first_layer(self.backbone.features[0][0], in_channels)
+            
         elif model_name == 'mobilenet_v3_small':
             self.backbone = models.mobilenet_v3_small(weights=models.MobileNet_V3_Small_Weights.IMAGENET1K_V1 if pretrained else None)
             num_features = self.backbone.classifier[0].in_features
             self.backbone.classifier = nn.Identity()
             
+            if in_channels != 3:
+                _patch_first_layer(self.backbone.features[0][0], in_channels)
+            
         else:
             # Try loading from timm
             try:
                 import timm
-                self.backbone = timm.create_model(model_name, pretrained=pretrained, num_classes=0)
+                # timm supports in_chans argument
+                self.backbone = timm.create_model(
+                    model_name, 
+                    pretrained=pretrained, 
+                    num_classes=0,
+                    in_chans=in_channels
+                )
                 num_features = self.backbone.num_features
             except ImportError:
                 raise ImportError("Please install 'timm' library to use this model: pip install timm")
@@ -129,17 +219,19 @@ def create_model(
     model_name: str = 'resnet50',
     pretrained: bool = True,
     freeze_backbone: bool = False,
-    device: str = 'cpu'
+    device: str = 'cpu',
+    in_channels: int = 4
 ) -> QRCodeClassifier:
     """
     Create and initialize a QR code multi-label classifier model.
     
     Args:
-        num_labels: Number of output labels (default: 3 for is_copied, is_blurry, is_low_light)
+        num_labels: Number of output labels
         model_name: Name of the backbone model
         pretrained: Whether to use pretrained weights
         freeze_backbone: Whether to freeze backbone weights
         device: Device to place the model on
+        in_channels: Number of input channels
         
     Returns:
         QRCodeClassifier model
@@ -148,7 +240,8 @@ def create_model(
         num_labels=num_labels,
         model_name=model_name,
         pretrained=pretrained,
-        freeze_backbone=freeze_backbone
+        freeze_backbone=freeze_backbone,
+        in_channels=in_channels
     )
     
     model = model.to(device)
@@ -159,15 +252,22 @@ def create_model(
     return model
 
 
-def load_model_for_inference(checkpoint_path: str, num_labels: int = 3, model_name: str = 'resnet50', device: str = 'cpu'):
+def load_model_for_inference(
+    checkpoint_path: str, 
+    num_labels: int = 3, 
+    model_name: str = 'resnet50', 
+    device: str = 'cpu',
+    in_channels: int = 4
+):
     """
     Load a trained model for inference.
     
     Args:
         checkpoint_path: Path to model checkpoint
-        num_labels: Number of labels (default: 3 for multi-label classification)
+        num_labels: Number of labels
         model_name: Name of the model architecture
         device: Device to load model on
+        in_channels: Number of input channels
         
     Returns:
         Loaded model in evaluation mode
@@ -177,7 +277,8 @@ def load_model_for_inference(checkpoint_path: str, num_labels: int = 3, model_na
         model_name=model_name,
         pretrained=False,
         freeze_backbone=False,
-        device=device
+        device=device,
+        in_channels=in_channels
     )
     
     checkpoint = torch.load(checkpoint_path, map_location=device)

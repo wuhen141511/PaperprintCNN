@@ -16,6 +16,14 @@ import numpy as np
 from src.model import load_model_for_inference
 from src.dataset import get_inference_transform
 from src.utils import get_device
+import cv2
+try:
+    from src.qrcode_utils import QRCodeRegistrator
+except ImportError:
+    # Handle case where package is run from different root
+    import sys
+    sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    from src.qrcode_utils import QRCodeRegistrator
 
 
 class QRCodePredictor:
@@ -30,7 +38,9 @@ class QRCodePredictor:
         device: str = None,
         backend: str = 'opencv',
         multi_label: bool = False,
-        threshold: float = 0.5
+        threshold: float = 0.5,
+        register_dir: str = 'data/register',
+        wqmodules_dir: str = 'wqmodules'
     ):
         """
         Initialize predictor.
@@ -44,11 +54,18 @@ class QRCodePredictor:
             backend: Preprocessing backend ('pil' or 'opencv')
             multi_label: Whether this is multi-label classification
             threshold: Threshold for multi-label binary predictions (default: 0.5)
+            register_dir: Directory containing reference images
         """
         self.device = get_device() if device is None else torch.device(device)
         self.image_size = image_size
         self.multi_label = multi_label
         self.threshold = threshold
+        self.register_dir = register_dir
+        self.wqmodules_dir = wqmodules_dir
+        
+        # Initialize registrator
+        self.registrator = QRCodeRegistrator(wqmodules_dir)
+        
         # Use the requested backend
         self.transform = get_inference_transform(image_size, backend=backend)
         self.backend = backend
@@ -96,7 +113,24 @@ class QRCodePredictor:
         """
         # Load and preprocess image
         image = Image.open(image_path).convert('RGB')
-        image_tensor = self.transform(image).unsqueeze(0).to(self.device)
+        
+        # Add 4th channel (Registration)
+        img_np = np.array(image)
+        img_bgr = cv2.cvtColor(img_np, cv2.COLOR_RGB2BGR)
+        
+        fourth_channel = self.registrator.get_fourth_channel(img_bgr, self.register_dir)
+        
+        # Resize 4th channel if needed (though warping should handle it, consistency check)
+        if fourth_channel.shape[:2] != img_np.shape[:2]:
+            fourth_channel = cv2.resize(fourth_channel, (img_np.shape[1], img_np.shape[0]))
+            
+        # Stack
+        combined_img = np.dstack((img_np, fourth_channel))
+        
+        # Convert to PIL RGBA (using Alpha for 4th channel)
+        image_4c = Image.fromarray(combined_img, 'RGBA')
+        
+        image_tensor = self.transform(image_4c).unsqueeze(0).to(self.device)
         
         # Predict
         with torch.no_grad():

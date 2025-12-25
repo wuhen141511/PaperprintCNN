@@ -412,7 +412,7 @@ def split_train_val_data(
 def export_to_onnx(
     model_path: Optional[str] = None,
     output_path: Optional[str] = None,
-    input_size: Tuple[int, int, int] = (3, 350, 350),
+    input_size: Tuple[int, int, int] = (4, 350, 350),
     batch_size: int = 1,
     opset_version: int = 11,
     dynamic_axes: bool = True,
