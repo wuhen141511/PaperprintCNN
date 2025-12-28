@@ -26,14 +26,15 @@ if __name__ == '__main__':
         num_labels=3,  # Multi-label count
         batch_size=32,
         learning_rate=0.001,
-        num_epochs=20,
+        num_epochs=30,
         image_size=224,
         freeze_backbone=True,
         checkpoint_dir='checkpoints',
         log_dir='logs',
         multi_label=True,
         label_names=["is_copied", "is_low_light", "is_blurry"],
-        load_checkpoint_path=None  # Set to checkpoint path to resume training，default is None
+        load_checkpoint_path=None,  # Set to checkpoint path to resume training，default is None
+        pretrained_path=r'checkpoints/convnextv2_tiny_22k_384_ema.pt'  # Load local weights
     )
     
     print("\n" + "="*60)

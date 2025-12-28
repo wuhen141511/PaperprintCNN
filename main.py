@@ -38,6 +38,10 @@ def train_command(args):
     # If not explicitly set via CLI, check config or default to True
     if not args.multi_label_set: # Custom flag I'll handle internally or just rely on default
          multi_label = config.get('model', {}).get('multi_label', True)
+         
+    pretrained_path = args.pretrained_path or config.get('model', {}).get('pretrained_path')
+    label_names = config.get('model', {}).get('label_names', ["is_copied", "is_low_light", "is_blurry"])
+    freeze_backbone = config.get('model', {}).get('freeze_backbone', True)
 
     print("\n" + "="*60)
     print("QR Code Classification - Training Mode")
@@ -62,10 +66,12 @@ def train_command(args):
         learning_rate=learning_rate,
         num_epochs=num_epochs,
         image_size=image_size,
-        freeze_backbone=True,
+        freeze_backbone=freeze_backbone,
         checkpoint_dir='checkpoints',
         log_dir='logs',
-        multi_label=multi_label
+        multi_label=multi_label,
+        label_names=label_names,
+        pretrained_path=pretrained_path
     )
 
 
@@ -123,6 +129,7 @@ Examples:
     train_parser.add_argument('--epochs', type=int, help='Number of epochs')
     train_parser.add_argument('--image-size', type=int, help='Input image size')
     train_parser.add_argument('--config', type=str, help='Path to config YAML file')
+    train_parser.add_argument('--pretrained-path', type=str, help='Path to local pretrained weights file')
     
     # Multi-label flags
     train_parser.add_argument('--multi-label', action='store_true', default=True, help='Enable multi-label mode (default: True)')

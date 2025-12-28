@@ -14,6 +14,7 @@ model:
   name: "convnextv2_tiny"  # Options: convnextv2_tiny, resnet50, resnet18, efficientnet_b0, mobilenet_v3_small
   num_labels: 3  # Multi-label: is_copied, is_blurry, is_low_light
   pretrained: true
+  pretrained_path: "checkpoints/convnextv2_tiny_22k_384_ema.pt" # Local path to pretrained weights
   freeze_backbone: true  # Start with frozen backbone for feature extraction
   label_names: ["is_copied", "is_low_light", "is_blurry"]  # Label definitions
 

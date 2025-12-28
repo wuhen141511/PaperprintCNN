@@ -1,6 +1,7 @@
 import cv2
 import numpy as np
 import os
+import urllib.parse
 from typing import Optional, Tuple, List
 
 class QRCodeRegistrator:
@@ -76,8 +77,8 @@ class QRCodeRegistrator:
         qr_content = res[0]
         qr_points_orig = points[0]
         
-        # 2. Find reference image
-        ref_path = os.path.join(register_dir, f"{qr_content}.jpg")
+        # 2. Find reference image，need to encode the qr_content
+        ref_path = os.path.join(register_dir, f"{self.urlEncode(qr_content)}.jpg")
         if not os.path.exists(ref_path):
             # Try to handle potential filename issues (unsafe chars) if needed, 
             # but for now assume direct mapping
@@ -134,3 +135,9 @@ class QRCodeRegistrator:
         except Exception as e:
             print(f"Registration failed: {e}")
             return black_channel
+    
+    def urlEncode(self, content: str) -> str:
+        # 对HTTP开头的内容进行urlencode编码，模拟JavaScript的encodeURIComponent效果
+        # JavaScript encodeURIComponent不编码: A-Z, a-z, 0-9, -, _, ., !, ~, *, ', (, )
+        return urllib.parse.quote(content, safe="-_.!~*'()")
+        

@@ -38,7 +38,8 @@ class Trainer:
         seed: int = 42,
         multi_label: bool = True,
         label_names: List[str] = None,
-        load_checkpoint_path: str = None
+        load_checkpoint_path: str = None,
+        pretrained_path: str = None
     ):
         """
         Initialize trainer.
@@ -90,7 +91,8 @@ class Trainer:
             model_name=model_name,
             pretrained=True,
             freeze_backbone=freeze_backbone,
-            device=self.device
+            device=self.device,
+            pretrained_path=pretrained_path
         )
         
         # Setup training components
@@ -341,7 +343,8 @@ def train_model(
     log_dir: str = 'logs',
     multi_label: bool = True,
     label_names: List[str] = None,
-    load_checkpoint_path: str = None
+    load_checkpoint_path: str = None,
+    pretrained_path: str = None
 ):
     """
     Convenience function to train a model.
@@ -361,6 +364,7 @@ def train_model(
         multi_label: Whether to use multi-label classification
         label_names: List of label names for multi-label classification
         load_checkpoint_path: Optional path to checkpoint file to resume training
+        pretrained_path: Optional path to local pretrained weights file
     """
     trainer = Trainer(
         train_dir=train_dir,
@@ -376,7 +380,8 @@ def train_model(
         log_dir=log_dir,
         multi_label=multi_label,
         label_names=label_names,
-        load_checkpoint_path=load_checkpoint_path
+        load_checkpoint_path=load_checkpoint_path,
+        pretrained_path=pretrained_path
     )
     
     history = trainer.train()
