@@ -8,8 +8,8 @@ import csv
 import shutil
 from src.inference import QRCodePredictor
 
-def batch_predict(image_dir, checkpoint_path='checkpoints/best_model.pth', move_files=False, 
-                  output_csv='predictions.csv', multi_label=True):
+def batch_predict(image_dir, checkpoint_path='checkpoints/checkpoint_epoch_27.pth', move_files=False, 
+                  output_csv='predictions.csv', multi_label=True, use_contrastive=False):
     """
     批量预测目录中的所有图片
     
@@ -19,13 +19,15 @@ def batch_predict(image_dir, checkpoint_path='checkpoints/best_model.pth', move_
         move_files: 是否将测试文件按预测结果移动到对应的子目录中（对于多标签，会复制到所有匹配的类目录）
         output_csv: 结果CSV文件路径
         multi_label: 是否启用多标签模式
+        use_contrastive: 是否使用对比学习模型
     """
     # 创建预测器
     predictor = QRCodePredictor(
         checkpoint_path=checkpoint_path,
         model_name='convnextv2_tiny',
         backend='opencv',
-        multi_label=multi_label
+        multi_label=multi_label,
+        use_contrastive=use_contrastive
     )
     
     # 获取标签列表
@@ -148,6 +150,7 @@ if __name__ == '__main__':
 示例:
   python batch_predict.py test_images
   python batch_predict.py test_images --checkpoint checkpoints/best_model.pth --move-files
+  python batch_predict.py test_images --use-contrastive
         """
     )
     
@@ -160,7 +163,7 @@ if __name__ == '__main__':
     parser.add_argument(
         '--checkpoint',
         type=str,
-        default='checkpoints/best_model.pth',
+        default='checkpoints/checkpoint_epoch_27.pth',
         help='模型检查点路径'
     )
     
@@ -184,11 +187,17 @@ if __name__ == '__main__':
         help='强制开启多标签模式 (默认开启)'
     )
     
+    parser.add_argument(
+        '--use-contrastive',
+        action='store_true',
+        help='使用对比学习模型'
+    )
+    
     args = parser.parse_args()
     
     if not os.path.exists(args.image_dir):
         print(f"错误：目录不存在: {args.image_dir}")
         sys.exit(1)
     
-    batch_predict(args.image_dir, args.checkpoint, args.move_files, args.csv, args.multi_label)
+    batch_predict(args.image_dir, args.checkpoint, args.move_files, args.csv, args.multi_label, args.use_contrastive)
 

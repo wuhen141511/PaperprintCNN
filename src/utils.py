@@ -6,6 +6,8 @@ Includes device configuration, random seed setting, and helper functions.
 import random
 import numpy as np
 import torch
+import torch.nn as nn
+import torch.nn.functional as F
 import matplotlib.pyplot as plt
 from typing import Dict, List, Tuple, Optional
 import os
@@ -640,4 +642,60 @@ def export_to_onnx(
         
     except Exception as e:
         raise RuntimeError(f"Failed to export model to ONNX: {e}")
+
+
+class QRCodeContrastiveLoss(nn.Module):
+    """
+    专门针对QR码分类的对比损失
+    
+    核心思想：
+    - 原生图：RGB特征 ≈ 参考图特征（高相似度）
+    - 非原生图：RGB特征 ≠ 参考图特征（低相似度）
+    """
+    def __init__(self, margin=1.0, temperature=0.5):
+        """
+        Args:
+            margin: 边界参数，控制正负样本对的距离
+            temperature: 温度参数，控制相似度的缩放
+        """
+        super().__init__()
+        self.margin = margin
+        self.temperature = temperature
+    
+    def forward(self, rgb_feat, ref_feat, labels):
+        """
+        计算对比损失
+        
+        Args:
+            rgb_feat: (B, D) RGB特征向量
+            ref_feat: (B, D) 参考图特征向量
+            labels: (B, 3) 多标签 [is_copied, is_low_light, is_blurry]
+        
+        Returns:
+            loss: 对比损失值
+        """
+        # 归一化特征向量
+        rgb_feat = F.normalize(rgb_feat, dim=1)
+        ref_feat = F.normalize(ref_feat, dim=1)
+        
+        # 计算余弦相似度
+        similarity = F.cosine_similarity(rgb_feat, ref_feat, dim=1)  # (B,)
+        
+        # 判断是否为原生图（所有标签都为0）
+        is_native = (labels[:, 0] == 0) & (labels[:, 1] == 0) & (labels[:, 2] == 0)
+        
+        # 原生图：相似度应该高（接近1）
+        # 非原生图：相似度应该低（接近0）
+        target_similarity = is_native.float()
+        
+        # 使用温度缩放相似度
+        similarity_scaled = similarity / self.temperature
+        
+        # 计算二元交叉熵损失
+        loss = F.binary_cross_entropy_with_logits(
+            similarity_scaled,
+            target_similarity
+        )
+        
+        return loss
 

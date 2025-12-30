@@ -15,7 +15,7 @@ import json
 
 from src.model import create_model
 from src.dataset import create_dataloaders
-from src.utils import set_seed, get_device, save_checkpoint, load_checkpoint, calculate_metrics, calculate_multilabel_metrics
+from src.utils import set_seed, get_device, save_checkpoint, load_checkpoint, calculate_metrics, calculate_multilabel_metrics, QRCodeContrastiveLoss
 
 
 class Trainer:
@@ -39,7 +39,10 @@ class Trainer:
         multi_label: bool = True,
         label_names: List[str] = None,
         load_checkpoint_path: str = None,
-        pretrained_path: str = None
+        pretrained_path: str = None,
+        use_contrastive: bool = False,
+        contrastive_weight: float = 0.3,
+        classification_weight: float = 1.0
     ):
         """
         Initialize trainer.
@@ -61,6 +64,9 @@ class Trainer:
             multi_label: Whether to use multi-label classification
             label_names: List of label names for multi-label classification
             load_checkpoint_path: Optional path to checkpoint file to resume training
+            use_contrastive: Whether to use contrastive learning
+            contrastive_weight: Weight for contrastive loss
+            classification_weight: Weight for classification loss
         """
         # Set random seed
         set_seed(seed)
@@ -68,6 +74,7 @@ class Trainer:
         # Store configuration
         self.multi_label = multi_label
         self.label_names = label_names
+        self.use_contrastive = use_contrastive
         
         # Setup device
         self.device = get_device() if device is None else torch.device(device)
@@ -92,13 +99,22 @@ class Trainer:
             pretrained=True,
             freeze_backbone=freeze_backbone,
             device=self.device,
-            pretrained_path=pretrained_path
+            pretrained_path=pretrained_path,
+            use_contrastive=use_contrastive
         )
         
         # Setup training components
         if multi_label:
-            # Multi-label classification: BCEWithLogitsLoss
-            self.criterion = nn.BCEWithLogitsLoss()
+            if use_contrastive:
+                # Contrastive learning: Use both contrastive and classification loss
+                self.contrastive_criterion = QRCodeContrastiveLoss(margin=1.0, temperature=0.5)
+                self.classification_criterion = nn.BCEWithLogitsLoss()
+                self.contrastive_weight = contrastive_weight
+                self.classification_weight = classification_weight
+                print("Using contrastive learning with QRCodeContrastiveLoss")
+            else:
+                # Standard multi-label classification: BCEWithLogitsLoss
+                self.criterion = nn.BCEWithLogitsLoss()
         else:
             # Single-class classification: CrossEntropyLoss
             self.criterion = nn.CrossEntropyLoss()
@@ -161,6 +177,8 @@ class Trainer:
         """Train for one epoch."""
         self.model.train()
         running_loss = 0.0
+        running_contrastive_loss = 0.0
+        running_classification_loss = 0.0
         all_predictions = []
         all_labels = []
         
@@ -171,13 +189,31 @@ class Trainer:
             
             # Forward pass
             self.optimizer.zero_grad()
-            outputs = self.model(images)
             
-            # For multi-label, labels should be float; for single-class, long
-            if self.multi_label:
-                loss = self.criterion(outputs, labels)
+            if self.use_contrastive:
+                # Contrastive learning: model returns (output, rgb_feat, ref_feat)
+                outputs, rgb_feat, ref_feat = self.model(images)
+                
+                # Calculate losses
+                contrastive_loss = self.contrastive_criterion(rgb_feat, ref_feat, labels)
+                classification_loss = self.classification_criterion(outputs, labels)
+                
+                # Weighted sum
+                loss = (self.contrastive_weight * contrastive_loss + 
+                         self.classification_weight * classification_loss)
+                
+                # Track losses
+                running_contrastive_loss += contrastive_loss.item() * images.size(0)
+                running_classification_loss += classification_loss.item() * images.size(0)
             else:
-                loss = self.criterion(outputs, labels.long())
+                # Standard training
+                outputs = self.model(images)
+                
+                # For multi-label, labels should be float; for single-class, long
+                if self.multi_label:
+                    loss = self.criterion(outputs, labels)
+                else:
+                    loss = self.criterion(outputs, labels.long())
             
             # Backward pass
             loss.backward()
@@ -189,7 +225,14 @@ class Trainer:
             all_labels.append(labels.detach())
             
             # Update progress bar
-            pbar.set_postfix({'loss': loss.item()})
+            if self.use_contrastive:
+                pbar.set_postfix({
+                    'loss': loss.item(),
+                    'contrastive': contrastive_loss.item(),
+                    'cls': classification_loss.item()
+                })
+            else:
+                pbar.set_postfix({'loss': loss.item()})
         
         # Calculate epoch metrics
         epoch_loss = running_loss / len(self.train_loader.dataset)
@@ -203,7 +246,13 @@ class Trainer:
             metrics = calculate_metrics(all_predictions, all_labels)
             epoch_acc = metrics['accuracy']
         
-        return epoch_loss, epoch_acc
+        if self.use_contrastive:
+            return epoch_loss, epoch_acc, {
+                'contrastive_loss': running_contrastive_loss / len(self.train_loader.dataset),
+                'classification_loss': running_classification_loss / len(self.train_loader.dataset)
+            }
+        else:
+            return epoch_loss, epoch_acc
     
     def validate(self, epoch: int) -> Tuple[float, float]:
         """Validate the model."""
@@ -219,11 +268,18 @@ class Trainer:
                 labels = labels.to(self.device)
                 
                 # Forward pass
-                outputs = self.model(images)
+                if self.use_contrastive:
+                    # Contrastive learning: model returns (output, rgb_feat, ref_feat)
+                    outputs, _, _ = self.model(images)
+                else:
+                    outputs = self.model(images)
                 
                 # For multi-label, labels should be float; for single-class, long
                 if self.multi_label:
-                    loss = self.criterion(outputs, labels)
+                    if self.use_contrastive:
+                        loss = self.classification_criterion(outputs, labels)
+                    else:
+                        loss = self.criterion(outputs, labels)
                 else:
                     loss = self.criterion(outputs, labels.long())
                 
@@ -260,7 +316,10 @@ class Trainer:
         
         for epoch in range(self.start_epoch, self.num_epochs + 1):
             # Train
-            train_loss, train_acc = self.train_epoch(epoch)
+            if self.use_contrastive:
+                train_loss, train_acc, train_losses_dict = self.train_epoch(epoch)
+            else:
+                train_loss, train_acc = self.train_epoch(epoch)
             
             # Validate
             val_loss, val_acc = self.validate(epoch)
@@ -281,9 +340,17 @@ class Trainer:
             self.writer.add_scalar('Accuracy/val', val_acc, epoch)
             self.writer.add_scalar('Learning_rate', self.optimizer.param_groups[0]['lr'], epoch)
             
+            # Log contrastive losses if using contrastive learning
+            if self.use_contrastive:
+                self.writer.add_scalar('Loss/contrastive', train_losses_dict['contrastive_loss'], epoch)
+                self.writer.add_scalar('Loss/classification', train_losses_dict['classification_loss'], epoch)
+            
             # Print epoch summary
             print(f"\nEpoch {epoch}/{self.num_epochs} Summary:")
             print(f"  Train Loss: {train_loss:.4f} | Train Acc: {train_acc:.4f}")
+            if self.use_contrastive:
+                print(f"    - Contrastive Loss: {train_losses_dict['contrastive_loss']:.4f}")
+                print(f"    - Classification Loss: {train_losses_dict['classification_loss']:.4f}")
             print(f"  Val Loss:   {val_loss:.4f} | Val Acc:   {val_acc:.4f}")
             print(f"  LR: {self.optimizer.param_groups[0]['lr']:.6f}")
             
@@ -344,7 +411,10 @@ def train_model(
     multi_label: bool = True,
     label_names: List[str] = None,
     load_checkpoint_path: str = None,
-    pretrained_path: str = None
+    pretrained_path: str = None,
+    use_contrastive: bool = False,
+    contrastive_weight: float = 0.3,
+    classification_weight: float = 1.0
 ):
     """
     Convenience function to train a model.
@@ -365,6 +435,9 @@ def train_model(
         label_names: List of label names for multi-label classification
         load_checkpoint_path: Optional path to checkpoint file to resume training
         pretrained_path: Optional path to local pretrained weights file
+        use_contrastive: Whether to use contrastive learning
+        contrastive_weight: Weight for contrastive loss
+        classification_weight: Weight for classification loss
     """
     trainer = Trainer(
         train_dir=train_dir,
@@ -381,7 +454,10 @@ def train_model(
         multi_label=multi_label,
         label_names=label_names,
         load_checkpoint_path=load_checkpoint_path,
-        pretrained_path=pretrained_path
+        pretrained_path=pretrained_path,
+        use_contrastive=use_contrastive,
+        contrastive_weight=contrastive_weight,
+        classification_weight=classification_weight
     )
     
     history = trainer.train()

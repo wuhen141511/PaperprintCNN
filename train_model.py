@@ -24,17 +24,20 @@ if __name__ == '__main__':
         val_dir='data/val',
         model_name='convnextv2_tiny',
         num_labels=3,  # Multi-label count
-        batch_size=32,
-        learning_rate=0.001,
-        num_epochs=40,
-        image_size=384,
+        batch_size=16,  # 减小batch size适应384x384输入
+        learning_rate=1e-4,  # 使用较小学习率
+        num_epochs=50,  # 增加epoch数
+        image_size=384,  # 使用384x384输入尺寸
         freeze_backbone=True,
         checkpoint_dir='checkpoints',
         log_dir='logs',
         multi_label=True,
         label_names=["is_copied", "is_low_light", "is_blurry"],
         load_checkpoint_path=None,  # Set to checkpoint path to resume training，default is None
-        pretrained_path=r'checkpoints/convnextv2_tiny_22k_384_ema.pt'  # Load local weights
+        pretrained_path=r'checkpoints/convnextv2_tiny_22k_384_ema.pt',  # Load local weights
+        use_contrastive=True,  # 启用对比学习
+        contrastive_weight=0.3,  # 对比学习权重
+        classification_weight=1.0  # 分类损失权重
     )
     
     print("\n" + "="*60)

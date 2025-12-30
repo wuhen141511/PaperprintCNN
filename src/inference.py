@@ -40,7 +40,8 @@ class QRCodePredictor:
         multi_label: bool = False,
         threshold: float = 0.5,
         register_dir: str = 'data/register',
-        wqmodules_dir: str = 'wqmodules'
+        wqmodules_dir: str = 'wqmodules',
+        use_contrastive: bool = False
     ):
         """
         Initialize predictor.
@@ -55,6 +56,7 @@ class QRCodePredictor:
             multi_label: Whether this is multi-label classification
             threshold: Threshold for multi-label binary predictions (default: 0.5)
             register_dir: Directory containing reference images
+            use_contrastive: Whether to use contrastive learning model
         """
         self.device = get_device() if device is None else torch.device(device)
         self.image_size = image_size
@@ -62,6 +64,7 @@ class QRCodePredictor:
         self.threshold = threshold
         self.register_dir = register_dir
         self.wqmodules_dir = wqmodules_dir
+        self.use_contrastive = use_contrastive
         
         # Initialize registrator
         self.registrator = QRCodeRegistrator(wqmodules_dir)
@@ -91,12 +94,16 @@ class QRCodePredictor:
             checkpoint_path=checkpoint_path,
             num_labels=num_labels,
             model_name=model_name,
-            device=self.device
+            device=self.device,
+            in_channels=4,
+            use_contrastive=self.use_contrastive
         )
         
         print(f"Predictor ready!")
         if multi_label:
             print(f"Labels: {self.label_names} (multi-label mode)")
+            if use_contrastive:
+                print(f"Using contrastive learning model")
         else:
             print(f"Classes: {self.label_names} (single-class mode)")
     
@@ -150,7 +157,13 @@ class QRCodePredictor:
         
         # Predict
         with torch.no_grad():
-            outputs = self.model(image_tensor)
+            model_output = self.model(image_tensor)
+            
+            # Handle contrastive model output (returns 3 values: output, rgb_feat, ref_feat)
+            if self.use_contrastive:
+                outputs = model_output[0]  # Only use classification output
+            else:
+                outputs = model_output
             
             if self.multi_label:
                 # Multi-label classification

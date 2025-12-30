@@ -1,6 +1,6 @@
 """
 Model definition and transfer learning setup for QR code multi-label classification.
-Uses pretrained models from torchvision with custom classifier heads.
+Uses pretrained models with custom classifier heads.
 Supports multi-label classification for: is_copied, is_blurry, is_low_light.
 """
 
@@ -8,6 +8,7 @@ import torch
 import torch.nn as nn
 from torchvision import models
 from typing import Optional
+import numpy as np
 
 def _patch_first_layer(layer, in_channels: int):
     """
@@ -327,8 +328,9 @@ def create_model(
     freeze_backbone: bool = False,
     device: str = 'cpu',
     in_channels: int = 4,
-    pretrained_path: str = r'checkpoints/convnextv2_tiny_22k_384_ema.pt'
-) -> QRCodeClassifier:
+    pretrained_path: str = r'checkpoints/convnextv2_tiny_22k_384_ema.pt',
+    use_contrastive: bool = False
+):
     """
     Create and initialize a QR code multi-label classifier model.
     
@@ -340,20 +342,31 @@ def create_model(
         device: Device to place the model on
         in_channels: Number of input channels
         pretrained_path: Optional path to local pretrained weights file
+        use_contrastive: Whether to use contrastive learning model
         
     Returns:
-        QRCodeClassifier model
+        QRCodeClassifier or CrossAttentionQRCodeClassifier model
     """
-    model = QRCodeClassifier(
-        num_labels=num_labels,
-        model_name=model_name,
-        pretrained=pretrained,
-        freeze_backbone=freeze_backbone,
-        in_channels=in_channels,
-        pretrained_path=pretrained_path
-    )
-    
-    model = model.to(device)
+    if use_contrastive:
+        model = create_contrastive_model(
+            num_labels=num_labels,
+            model_name=model_name,
+            pretrained=pretrained,
+            freeze_backbone=freeze_backbone,
+            device=device,
+            in_channels=in_channels,
+            pretrained_path=pretrained_path
+        )
+    else:
+        model = QRCodeClassifier(
+            num_labels=num_labels,
+            model_name=model_name,
+            pretrained=pretrained,
+            freeze_backbone=freeze_backbone,
+            in_channels=in_channels,
+            pretrained_path=pretrained_path
+        )
+        model = model.to(device)
     
     print(f"Total parameters: {model.get_num_total_params():,}")
     print(f"Trainable parameters: {model.get_num_trainable_params():,}")
@@ -366,7 +379,8 @@ def load_model_for_inference(
     num_labels: int = 3, 
     model_name: str = 'resnet50', 
     device: str = 'cpu',
-    in_channels: int = 4
+    in_channels: int = 4,
+    use_contrastive: bool = False
 ):
     """
     Load a trained model for inference.
@@ -377,18 +391,31 @@ def load_model_for_inference(
         model_name: Name of the model architecture
         device: Device to load model on
         in_channels: Number of input channels
+        use_contrastive: Whether the model uses contrastive learning
         
     Returns:
         Loaded model in evaluation mode
     """
-    model = create_model(
-        num_labels=num_labels,
-        model_name=model_name,
-        pretrained=False,
-        freeze_backbone=False,
-        device=device,
-        in_channels=in_channels
-    )
+    if use_contrastive:
+        # 对比学习模型
+        model = create_contrastive_model(
+            num_labels=num_labels,
+            model_name=model_name,
+            pretrained=False,
+            freeze_backbone=False,
+            device=device,
+            in_channels=in_channels
+        )
+    else:
+        # 标准模型
+        model = create_model(
+            num_labels=num_labels,
+            model_name=model_name,
+            pretrained=False,
+            freeze_backbone=False,
+            device=device,
+            in_channels=in_channels
+        )
     
     checkpoint = torch.load(checkpoint_path, map_location=device)
     model.load_state_dict(checkpoint['model_state_dict'])
@@ -400,3 +427,396 @@ def load_model_for_inference(
         print(f"Checkpoint mean accuracy: {checkpoint['mean_accuracy']:.4f}")
     
     return model
+
+
+class CrossAttentionQRCodeClassifier(nn.Module):
+    """
+    交叉注意力QR码分类器
+    
+    使用交叉注意力机制让RGB通道和参考图通道相互关注，
+    学习复杂的对比关系，提升分类性能。
+    """
+    def __init__(
+        self,
+        rgb_backbone,
+        ref_backbone,
+        num_labels: int = 3,
+        d_model: int = 512,
+        nhead: int = 8,
+        num_layers: int = 2,
+        dropout: float = 0.1
+    ):
+        """
+        Args:
+            rgb_backbone: 用于RGB通道的预训练backbone模型（3通道）
+            ref_backbone: 用于参考图通道的预训练backbone模型（3通道）
+            num_labels: 输出标签数量
+            d_model: Transformer的隐藏维度
+            nhead: 注意力头数
+            num_layers: Transformer编码器层数
+            dropout: Dropout概率
+        """
+        super().__init__()
+        
+        self.rgb_backbone = rgb_backbone
+        self.ref_backbone = ref_backbone
+        self.num_labels = num_labels
+        self.d_model = d_model
+        self.nhead = nhead
+        
+        # 获取特征维度
+        self.feat_dim = rgb_backbone.num_features if hasattr(rgb_backbone, 'num_features') else 2048
+        
+        # 投影层：将backbone特征投影到Transformer维度
+        self.rgb_proj = nn.Linear(self.feat_dim, d_model)
+        self.ref_proj = nn.Linear(self.feat_dim, d_model)
+        
+        # 位置编码
+        self.pos_encoding = self._create_positional_encoding(d_model, max_len=10)
+        
+        # 交叉注意力编码器
+        encoder_layer = nn.TransformerEncoderLayer(
+            d_model=d_model,
+            nhead=nhead,
+            dim_feedforward=d_model * 4,
+            dropout=dropout,
+            activation='gelu',
+            batch_first=True,
+            norm_first=True
+        )
+        self.cross_attention = nn.TransformerEncoder(encoder_layer, num_layers=num_layers)
+        
+        # 融合层
+        self.fusion = nn.Sequential(
+            nn.Linear(d_model * 2, d_model),
+            nn.LayerNorm(d_model),
+            nn.GELU(),
+            nn.Dropout(dropout),
+            nn.Linear(d_model, d_model // 2),
+            nn.LayerNorm(d_model // 2),
+            nn.GELU(),
+            nn.Dropout(dropout)
+        )
+        
+        # 分类器
+        self.classifier = nn.Sequential(
+            nn.Linear(d_model // 2, 256),
+            nn.LayerNorm(256),
+            nn.GELU(),
+            nn.Dropout(dropout),
+            nn.Linear(256, 128),
+            nn.LayerNorm(128),
+            nn.GELU(),
+            nn.Dropout(dropout),
+            nn.Linear(128, num_labels)
+        )
+        
+        print(f"CrossAttentionQRCodeClassifier created:")
+        print(f"  - Feature dimension: {self.feat_dim}")
+        print(f"  - Transformer dimension: {d_model}")
+        print(f"  - Attention heads: {nhead}")
+        print(f"  - Transformer layers: {num_layers}")
+        print(f"  - Number of labels: {num_labels}")
+    
+    def _create_positional_encoding(self, d_model: int, max_len: int = 5000):
+        """创建位置编码"""
+        pe = torch.zeros(max_len, d_model)
+        position = torch.arange(0, max_len, dtype=torch.float).unsqueeze(1)
+        div_term = torch.exp(torch.arange(0, d_model, 2).float() * (-np.log(10000.0) / d_model))
+        pe[:, 0::2] = torch.sin(position * div_term)
+        pe[:, 1::2] = torch.cos(position * div_term)
+        return pe.unsqueeze(0)
+    
+    def forward(self, x):
+        """
+        前向传播
+        
+        Args:
+            x: (batch_size, 4, H, W) 输入张量
+               x[:, :3, :, :] = RGB通道
+               x[:, 3:4, :, :] = 参考图通道
+        
+        Returns:
+            output: (batch_size, num_labels) 分类输出
+            rgb_attended: (batch_size, d_model) RGB的注意力特征
+            ref_attended: (batch_size, d_model) 参考图的注意力特征
+        """
+        batch_size = x.size(0)
+        
+        # 分离RGB和参考图通道
+        rgb = x[:, :3, :, :]
+        ref = x[:, 3:4, :, :].repeat(1, 3, 1, 1)
+        
+        # 提取特征
+        rgb_feat = self.rgb_backbone(rgb)   # (B, feat_dim)
+        ref_feat = self.ref_backbone(ref)   # (B, feat_dim)
+        
+        # 投影到Transformer维度
+        rgb_proj = self.rgb_proj(rgb_feat)  # (B, d_model)
+        ref_proj = self.ref_proj(ref_feat)  # (B, d_model)
+        
+        # 扩展为序列格式 (B, 1, d_model)
+        rgb_proj = rgb_proj.unsqueeze(1)
+        ref_proj = ref_proj.unsqueeze(1)
+        
+        # 添加位置编码
+        pos_enc = self.pos_encoding[:, :2, :].to(rgb_proj.device)
+        rgb_proj = rgb_proj + pos_enc[:, 0:1, :]
+        ref_proj = ref_proj + pos_enc[:, 1:2, :]
+        
+        # 堆叠为序列 (B, 2, d_model)
+        seq = torch.cat([rgb_proj, ref_proj], dim=1)
+        
+        # 交叉注意力
+        attended = self.cross_attention(seq)  # (B, 2, d_model)
+        
+        # 提取RGB和参考图的注意力特征
+        rgb_attended = attended[:, 0, :]  # (B, d_model)
+        ref_attended = attended[:, 1, :]  # (B, d_model)
+        
+        # 融合
+        fused = torch.cat([rgb_attended, ref_attended], dim=1)  # (B, 2*d_model)
+        fused = self.fusion(fused)  # (B, d_model//2)
+        
+        # 分类
+        output = self.classifier(fused)  # (B, num_labels)
+        
+        return output, rgb_attended, ref_attended
+    
+    def get_attention_weights(self, x):
+        """
+        获取注意力权重（用于可视化）
+        
+        Args:
+            x: (batch_size, 4, H, W) 输入张量
+        
+        Returns:
+            attention_weights: 注意力权重
+        """
+        batch_size = x.size(0)
+        
+        # 分离通道
+        rgb = x[:, :3, :, :]
+        ref = x[:, 3:4, :, :].repeat(1, 3, 1, 1)
+        
+        # 提取特征
+        rgb_feat = self.backbone(rgb)
+        ref_feat = self.backbone(ref)
+        
+        # 投影
+        rgb_proj = self.rgb_proj(rgb_feat)
+        ref_proj = self.ref_proj(ref_feat)
+        
+        # 堆叠为序列
+        seq = torch.stack([rgb_proj, ref_proj], dim=1)
+        
+        # 交叉注意力（不使用dropout以获取注意力权重）
+        return self.cross_attention(seq)
+    
+    def get_num_trainable_params(self):
+        """Get the number of trainable parameters."""
+        return sum(p.numel() for p in self.parameters() if p.requires_grad)
+    
+    def get_num_total_params(self):
+        """Get the total number of parameters."""
+        return sum(p.numel() for p in self.parameters())
+
+
+def create_contrastive_model(
+    num_labels: int = 3,
+    model_name: str = 'resnet50',
+    pretrained: bool = True,
+    freeze_backbone: bool = False,
+    device: str = 'cpu',
+    in_channels: int = 4,
+    pretrained_path: str = None,
+    d_model: int = 512,
+    nhead: int = 8,
+    num_layers: int = 2,
+    dropout: float = 0.1
+) -> CrossAttentionQRCodeClassifier:
+    """
+    创建对比学习模型
+    
+    Args:
+        num_labels: 输出标签数量
+        model_name: backbone模型名称
+        pretrained: 是否使用预训练权重
+        freeze_backbone: 是否冻结backbone
+        device: 设备
+        in_channels: 输入通道数（总输入通道数，实际每个backbone使用3通道）
+        pretrained_path: 预训练权重路径
+        d_model: Transformer隐藏维度
+        nhead: 注意力头数
+        num_layers: Transformer层数
+        dropout: Dropout概率
+    
+    Returns:
+        CrossAttentionQRCodeClassifier模型
+    """
+    # 创建RGB backbone（3通道）
+    rgb_backbone = _create_single_backbone(
+        model_name=model_name,
+        pretrained=pretrained,
+        pretrained_path=pretrained_path,
+        in_channels=3,
+        freeze_backbone=freeze_backbone
+    )
+    
+    # 创建参考图backbone（3通道）
+    ref_backbone = _create_single_backbone(
+        model_name=model_name,
+        pretrained=pretrained,
+        pretrained_path=pretrained_path,
+        in_channels=3,
+        freeze_backbone=freeze_backbone
+    )
+    
+    # 创建对比学习模型
+    model = CrossAttentionQRCodeClassifier(
+        rgb_backbone=rgb_backbone,
+        ref_backbone=ref_backbone,
+        num_labels=num_labels,
+        d_model=d_model,
+        nhead=nhead,
+        num_layers=num_layers,
+        dropout=dropout
+    )
+    
+    model = model.to(device)
+    
+    print(f"Total parameters: {sum(p.numel() for p in model.parameters()):,}")
+    print(f"Trainable parameters: {sum(p.numel() for p in model.parameters() if p.requires_grad):,}")
+    
+    return model
+
+
+def _create_single_backbone(
+    model_name: str,
+    pretrained: bool,
+    pretrained_path: str,
+    in_channels: int,
+    freeze_backbone: bool
+):
+    """
+    创建单个backbone
+    
+    Args:
+        model_name: 模型名称
+        pretrained: 是否使用预训练权重
+        pretrained_path: 预训练权重路径
+        in_channels: 输入通道数
+        freeze_backbone: 是否冻结backbone
+    
+    Returns:
+        backbone模型
+    """
+    if model_name == 'resnet50':
+        backbone = models.resnet50(weights=models.ResNet50_Weights.IMAGENET1K_V2 if pretrained else None)
+        num_features = backbone.fc.in_features
+        backbone.fc = nn.Identity()
+        
+        if in_channels != 3:
+            _patch_first_layer(backbone.conv1, in_channels)
+            
+    elif model_name == 'resnet18':
+        backbone = models.resnet18(weights=models.ResNet18_Weights.IMAGENET1K_V1 if pretrained else None)
+        num_features = backbone.fc.in_features
+        backbone.fc = nn.Identity()
+        
+        if in_channels != 3:
+            _patch_first_layer(backbone.conv1, in_channels)
+            
+    elif model_name == 'efficientnet_b0':
+        backbone = models.efficientnet_b0(weights=models.EfficientNet_B0_Weights.IMAGENET1K_V1 if pretrained else None)
+        num_features = backbone.classifier[1].in_features
+        backbone.classifier = nn.Identity()
+        
+        if in_channels != 3:
+            _patch_first_layer(backbone.features[0][0], in_channels)
+            
+    else:
+        try:
+            import timm
+            actual_pretrained = pretrained and (pretrained_path is None)
+            backbone = timm.create_model(
+                model_name,
+                pretrained=actual_pretrained,
+                num_classes=0,
+                in_chans=in_channels
+            )
+            
+            if pretrained_path:
+                print(f"Loading custom pretrained weights from: {pretrained_path}")
+                checkpoint = torch.load(pretrained_path, map_location='cpu')
+                state_dict = checkpoint.get('model', checkpoint.get('state_dict', checkpoint))
+                
+                if 'convnextv2' in model_name:
+                    mapped_dict = {}
+                    for k, v in state_dict.items():
+                        new_k = k
+                        if k.startswith('downsample_layers.0.0'):
+                            new_k = k.replace('downsample_layers.0.0', 'stem.0')
+                        elif k.startswith('downsample_layers.0.1'):
+                            new_k = k.replace('downsample_layers.0.1', 'stem.1')
+                        elif k.startswith('downsample_layers.'):
+                            parts = k.split('.')
+                            new_k = f"stages.{parts[1]}.downsample.{parts[2]}.{'.'.join(parts[3:])}"
+                        elif k.startswith('stages.'):
+                            parts = k.split('.')
+                            if len(parts) >= 4:
+                                stage_idx = parts[1]
+                                block_idx = parts[2]
+                                param_name = '.'.join(parts[3:])
+                                if param_name == 'dwconv.weight': param_name = 'conv_dw.weight'
+                                elif param_name == 'dwconv.bias': param_name = 'conv_dw.bias'
+                                elif param_name == 'pwconv1.weight': param_name = 'mlp.fc1.weight'
+                                elif param_name == 'pwconv1.bias': param_name = 'mlp.fc1.bias'
+                                elif param_name == 'pwconv2.weight': param_name = 'mlp.fc2.weight'
+                                elif param_name == 'pwconv2.bias': param_name = 'mlp.fc2.bias'
+                                elif param_name == 'grn.gamma': 
+                                    param_name = 'mlp.grn.weight'
+                                    v = v.reshape(-1)
+                                elif param_name == 'grn.beta': 
+                                    param_name = 'mlp.grn.bias'
+                                    v = v.reshape(-1)
+                                new_k = f"stages.{stage_idx}.blocks.{block_idx}.{param_name}"
+                        elif k == 'norm.weight': new_k = 'head.norm.weight'
+                        elif k == 'norm.bias': new_k = 'head.norm.bias'
+                        mapped_dict[new_k] = v
+                    state_dict = mapped_dict
+                
+                model_dict = backbone.state_dict()
+                first_layer_key = 'stem.0.weight' if 'stem.0.weight' in model_dict else None
+                if first_layer_key and first_layer_key in state_dict:
+                    ckpt_weight = state_dict[first_layer_key]
+                    model_weight = model_dict[first_layer_key]
+                    if ckpt_weight.shape != model_weight.shape:
+                        print(f"Expanding weights for {first_layer_key}: {ckpt_weight.shape} -> {model_weight.shape}")
+                        new_weight = model_weight.clone()
+                        channels_to_copy = min(ckpt_weight.shape[1], model_weight.shape[1])
+                        new_weight[:, :channels_to_copy] = ckpt_weight[:, :channels_to_copy]
+                        if model_weight.shape[1] > ckpt_weight.shape[1]:
+                            avg_weight = torch.mean(ckpt_weight, dim=1, keepdim=True)
+                            for i in range(ckpt_weight.shape[1], model_weight.shape[1]):
+                                new_weight[:, i:i+1] = avg_weight
+                        state_dict[first_layer_key] = new_weight
+                
+                msg = backbone.load_state_dict(state_dict, strict=False)
+                print(f"Loaded weights with result: {msg}")
+                
+            num_features = backbone.num_features
+        except ImportError:
+            raise ImportError("Please install 'timm' library to use this model: pip install timm")
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            raise ValueError(f"Unsupported model: {model_name}. Error: {str(e)}")
+    
+    # 冻结backbone
+    if freeze_backbone:
+        for param in backbone.parameters():
+            param.requires_grad = False
+        print(f"Backbone frozen - only training classifier head")
+    
+    return backbone
