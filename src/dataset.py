@@ -77,6 +77,44 @@ class OpenCVResize:
         return Image.fromarray(img)
 
 
+class RGBAColorJitter:
+    """
+    ColorJitter that supports RGBA images.
+    Applies color jittering to RGB channels while keeping Alpha channel unchanged.
+    """
+    def __init__(self, brightness=0, contrast=0, saturation=0, hue=0):
+        self.brightness = brightness
+        self.contrast = contrast
+        self.saturation = saturation
+        self.hue = hue
+        
+        # Create the standard ColorJitter for RGB channels
+        self.color_jitter = transforms.ColorJitter(
+            brightness=brightness,
+            contrast=contrast,
+            saturation=saturation,
+            hue=hue
+        )
+    
+    def __call__(self, img):
+        # Check if image is RGBA
+        if img.mode == 'RGBA':
+            # Split into RGB and Alpha channels
+            rgb_img = img.convert('RGB')
+            alpha_channel = img.split()[3]
+            
+            # Apply color jitter to RGB channels
+            jittered_rgb = self.color_jitter(rgb_img)
+            
+            # Merge RGB and Alpha back together
+            jittered_rgba = Image.merge('RGBA', jittered_rgb.split() + (alpha_channel,))
+            return jittered_rgba
+        else:
+            # For non-RGBA images, apply standard color jitter
+            return self.color_jitter(img)
+
+
+
 class QRCodeDataset(Dataset):
     """
     Custom dataset for QR code images.
@@ -346,7 +384,7 @@ class QRCodeMultiLabelDataset(Dataset):
 
 
 def get_transforms(
-    image_size: int = 224, 
+    image_size: int = 384, 
     augment: bool = True,
     backend: str = 'opencv'  # Options: 'pil', 'opencv'
 ):
@@ -382,7 +420,7 @@ def get_transforms(
             resize_transform,
             transforms.RandomHorizontalFlip(p=0.5),
             transforms.RandomRotation(degrees=5),
-            transforms.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2, hue=0.1),
+            RGBAColorJitter(brightness=0.2, contrast=0.2, saturation=0.2, hue=0),
             transforms.RandomAffine(degrees=0, translate=(0.05, 0.05), scale=(0.95, 1.05)),
             transforms.ToTensor(),
             transforms.Normalize(mean=mean, std=std)
@@ -405,7 +443,7 @@ def create_dataloaders(
     train_dir: str,
     val_dir: str,
     batch_size: int = 32,
-    image_size: int = 224,
+    image_size: int = 384,
     num_workers: int = 0,
     backend: str = 'opencv',
     multi_label: bool = False,
@@ -488,7 +526,7 @@ def create_dataloaders(
     return train_loader, val_loader, metadata
 
 
-def get_inference_transform(image_size: int = 224, backend: str = 'opencv'):
+def get_inference_transform(image_size: int = 384, backend: str = 'opencv'):
     """
     Get transform for inference on single images.
     

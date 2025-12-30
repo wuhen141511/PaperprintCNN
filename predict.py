@@ -21,10 +21,12 @@ if __name__ == '__main__':
     print("QR Code Classification - Prediction")
     print("="*60)
     
+    # Add image_size parameter to predict_single_image call
     result = predict_single_image(
         image_path=image_path,
         checkpoint_path=checkpoint_path,
         model_name='convnextv2_tiny',
+        image_size=384,  # Add this line
         visualize=True
     )
     

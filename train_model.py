@@ -26,8 +26,8 @@ if __name__ == '__main__':
         num_labels=3,  # Multi-label count
         batch_size=32,
         learning_rate=0.001,
-        num_epochs=30,
-        image_size=224,
+        num_epochs=40,
+        image_size=384,
         freeze_backbone=True,
         checkpoint_dir='checkpoints',
         log_dir='logs',

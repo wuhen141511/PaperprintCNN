@@ -34,7 +34,7 @@ class QRCodePredictor:
         checkpoint_path: str,
         label_names: List[str] = None,
         model_name: str = 'convnextv2_tiny',
-        image_size: int = 224,
+        image_size: int = 384,
         device: str = None,
         backend: str = 'opencv',
         multi_label: bool = False,

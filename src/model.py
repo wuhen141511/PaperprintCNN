@@ -327,7 +327,7 @@ def create_model(
     freeze_backbone: bool = False,
     device: str = 'cpu',
     in_channels: int = 4,
-    pretrained_path: str = None
+    pretrained_path: str = r'checkpoints/convnextv2_tiny_22k_384_ema.pt'
 ) -> QRCodeClassifier:
     """
     Create and initialize a QR code multi-label classifier model.
