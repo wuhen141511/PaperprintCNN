@@ -419,8 +419,8 @@ def get_transforms(
         transform = transforms.Compose([
             resize_transform,
             transforms.RandomHorizontalFlip(p=0.5),
-            transforms.RandomRotation(degrees=5),
-            RGBAColorJitter(brightness=0.2, contrast=0.2, saturation=0.2, hue=0),
+            transforms.RandomRotation(degrees=10),
+            RGBAColorJitter(brightness=0.25, contrast=0.25, saturation=0.25, hue=0),
             transforms.RandomAffine(degrees=0, translate=(0.05, 0.05), scale=(0.95, 1.05)),
             transforms.ToTensor(),
             transforms.Normalize(mean=mean, std=std)

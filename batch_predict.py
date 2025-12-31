@@ -190,6 +190,7 @@ if __name__ == '__main__':
     parser.add_argument(
         '--use-contrastive',
         action='store_true',
+        default=True,
         help='使用对比学习模型'
     )
     
