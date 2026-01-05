@@ -13,11 +13,12 @@ from typing import List, Dict, Tuple, Optional
 
 def parse_filename_labels(filename: str, label_names: List[str]) -> Tuple[bool, Dict[str, int]]:
     """
-    Parse labels from filename pattern _XYZ where X, Y, Z are 0 or 1.
+    Parse labels from filename pattern _XYZ or _XYZW where X, Y, Z, W are 0 or 1.
+    For backward compatibility, 3-digit format defaults the 4th digit (is_screen) to 0.
 
     Args:
-        filename: Image filename (e.g., "image_101.jpg")
-        label_names: List of label names (should have 3 elements: [is_copied, is_low_light, is_blurry])
+        filename: Image filename (e.g., "image_101.jpg" or "image_1010.jpg")
+        label_names: List of label names (should have 4 elements: [is_copied, is_low_light, is_blurry, is_screen])
 
     Returns:
         Tuple of (is_valid, labels_dict)
@@ -27,26 +28,46 @@ def parse_filename_labels(filename: str, label_names: List[str]) -> Tuple[bool, 
     # Remove file extension
     name_without_ext = os.path.splitext(filename)[0]
 
-    # Pattern: ends with _XXX where X is 0 or 1
-    pattern = r'_([01])([01])([01])$'
-    match = re.search(pattern, name_without_ext)
+    # Try 4-digit pattern first: _XXXX where X is 0 or 1
+    pattern_4digit = r'_([01])([01])([01])([01])$'
+    match_4digit = re.search(pattern_4digit, name_without_ext)
 
-    if not match:
-        return False, {}
+    if match_4digit:
+        # Extract the four digits
+        # Position mapping: is_copied, is_low_light, is_blurry, is_screen
+        values = [int(match_4digit.group(1)), int(match_4digit.group(2)), int(match_4digit.group(3)), int(match_4digit.group(4))]
 
-    # Extract the three digits
-    # Position mapping: is_copied, is_low_light, is_blurry
-    values = [int(match.group(1)), int(match.group(2)), int(match.group(3))]
+        # Create labels dictionary
+        labels = {}
+        for i, label_name in enumerate(label_names):
+            if i < len(values):
+                labels[label_name] = values[i]
+            else:
+                labels[label_name] = 0
 
-    # Create labels dictionary
-    labels = {}
-    for i, label_name in enumerate(label_names):
-        if i < len(values):
-            labels[label_name] = values[i]
-        else:
-            labels[label_name] = 0
+        return True, labels
 
-    return True, labels
+    # Try 3-digit pattern for backward compatibility: _XXX where X is 0 or 1
+    pattern_3digit = r'_([01])([01])([01])$'
+    match_3digit = re.search(pattern_3digit, name_without_ext)
+
+    if match_3digit:
+        # Extract the three digits
+        # Position mapping: is_copied, is_low_light, is_blurry
+        # is_screen defaults to 0 for backward compatibility
+        values = [int(match_3digit.group(1)), int(match_3digit.group(2)), int(match_3digit.group(3)), 0]
+
+        # Create labels dictionary
+        labels = {}
+        for i, label_name in enumerate(label_names):
+            if i < len(values):
+                labels[label_name] = values[i]
+            else:
+                labels[label_name] = 0
+
+        return True, labels
+
+    return False, {}
 
 
 def create_annotation_template(
@@ -56,19 +77,20 @@ def create_annotation_template(
 ) -> str:
     """
     Create an annotation template file for all images in a directory.
-    Automatically sets labels based on filename pattern _XYZ where X,Y,Z are 0 or 1.
+    Automatically sets labels based on filename pattern _XYZ or _XYZW where X,Y,Z,W are 0 or 1.
+    For backward compatibility, 3-digit format defaults the 4th digit (is_screen) to 0.
     Invalid files (without pattern) are moved to invalid/ subdirectory.
 
     Args:
         image_dir: Directory containing images
         output_file: Path to save annotations.json (default: image_dir/annotations.json)
-        label_names: List of label names (default: ["is_copied", "is_low_light", "is_blurry"])
+        label_names: List of label names (default: ["is_copied", "is_low_light", "is_blurry", "is_screen"])
 
     Returns:
         Path to the created annotation file
     """
     if label_names is None:
-        label_names = ["is_copied", "is_low_light", "is_blurry"]
+        label_names = ["is_copied", "is_low_light", "is_blurry", "is_screen"]
 
     if output_file is None:
         output_file = os.path.join(image_dir, 'annotations.json')

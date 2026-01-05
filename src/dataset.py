@@ -195,19 +195,21 @@ class QRCodeDataset(Dataset):
 class QRCodeMultiLabelDataset(Dataset):
     """
     Multi-label dataset for QR code images.
-    Supports three binary labels: is_copied, is_blurry, is_low_light
+    Supports four binary labels: is_copied, is_blurry, is_low_light, is_screen
     
     Expected annotation format (JSON file):
     {
         "image1.jpg": {
             "is_copied": 1,
             "is_blurry": 0,
-            "is_low_light": 0
+            "is_low_light": 0,
+            "is_screen": 0
         },
         "image2.jpg": {
             "is_copied": 1,
             "is_blurry": 1,
-            "is_low_light": 0
+            "is_low_light": 0,
+            "is_screen": 1
         },
         ...
     }
@@ -234,11 +236,11 @@ class QRCodeMultiLabelDataset(Dataset):
             data_dir: Root directory containing images
             annotation_file: Path to JSON annotation file. If None, looks for 'annotations.json' in data_dir
             transform: Optional transform to be applied on images
-            label_names: List of label names (default: ["is_copied", "is_blurry", "is_low_light"])
+            label_names: List of label names (default: ["is_copied", "is_low_light", "is_blurry", "is_screen"])
         """
         self.data_dir = data_dir
         self.transform = transform
-        self.label_names = label_names or ["is_copied", "is_low_light", "is_blurry"]
+        self.label_names = label_names or ["is_copied", "is_low_light", "is_blurry", "is_screen"]
         self.num_labels = len(self.label_names)
         self.samples = []
         

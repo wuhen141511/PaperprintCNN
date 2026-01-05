@@ -535,7 +535,7 @@ def export_to_onnx(
             else:
                 num_classes = checkpoint['model_state_dict']['classifier.4.weight'].shape[0]
         except:
-            num_classes = 3  # Default to 3 for multi-label mode
+            num_classes = 4  # Default to 4 for multi-label mode
     
     # Get backbone model name
     if 'model_name' in checkpoint:

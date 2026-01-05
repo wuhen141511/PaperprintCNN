@@ -1,5 +1,6 @@
 [
   "is_copied",
   "is_low_light",
-  "is_blurry"
+  "is_blurry",
+  "is_screen"
 ]

@@ -26,7 +26,7 @@ class Trainer:
         train_dir: str,
         val_dir: str,
         model_name: str = 'resnet50',
-        num_labels: int = 3,
+        num_labels: int = 4,
         batch_size: int = 32,
         learning_rate: float = 0.001,
         num_epochs: int = 20,

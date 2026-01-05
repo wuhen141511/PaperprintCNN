@@ -88,7 +88,7 @@ class QRCodeClassifier(nn.Module):
     
     def __init__(
         self,
-        num_labels: int = 3,
+        num_labels: int = 4,
         model_name: str = 'resnet50',
         pretrained: bool = True,
         freeze_backbone: bool = False,
@@ -623,7 +623,7 @@ class CrossAttentionQRCodeClassifier(nn.Module):
 
 
 def create_contrastive_model(
-    num_labels: int = 3,
+    num_labels: int = 4,
     model_name: str = 'resnet50',
     pretrained: bool = True,
     freeze_backbone: bool = False,
