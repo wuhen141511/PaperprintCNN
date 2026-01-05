@@ -163,7 +163,7 @@ if __name__ == '__main__':
     parser.add_argument(
         '--checkpoint',
         type=str,
-        default='checkpoints/checkpoint_epoch_27.pth',
+        default='checkpoints/best_model.pth',
         help='模型检查点路径'
     )
     

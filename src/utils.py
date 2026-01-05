@@ -414,7 +414,7 @@ def split_train_val_data(
 def export_to_onnx(
     model_path: Optional[str] = None,
     output_path: Optional[str] = None,
-    input_size: Tuple[int, int, int] = (4, 350, 350),
+    input_size: Tuple[int, int, int] = (4, 384, 384),
     batch_size: int = 1,
     opset_version: int = 11,
     dynamic_axes: bool = True,
@@ -422,13 +422,16 @@ def export_to_onnx(
 ) -> str:
     """
     Export PyTorch model (.pth) to ONNX format for C++ and OpenCV deployment.
+    Supports both QRCodeClassifier and CrossAttentionQRCodeClassifier.
     
     Args:
         model_path: Path to the PyTorch checkpoint (.pth file).
                    If None, uses 'checkpoints/best_model.pth'
         output_path: Path to save the ONNX model. 
                     If None, saves in the same directory as model_path with .onnx extension
-        input_size: Input tensor size as (channels, height, width). Default: (3, 350, 350)
+        input_size: Input tensor size as (channels, height, width). 
+                   Default: (4, 350, 350) for CrossAttentionQRCodeClassifier
+                   Use (3, 350, 350) for QRCodeClassifier
         batch_size: Batch size for the dummy input. Default: 1
         opset_version: ONNX opset version. Default: 11 (compatible with most OpenCV versions)
         dynamic_axes: Whether to use dynamic batch size. Default: True
@@ -438,13 +441,19 @@ def export_to_onnx(
         Path to the exported ONNX model
         
     Example:
-        >>> # Export default model
+        >>> # Export default model (CrossAttentionQRCodeClassifier with 4 channels)
         >>> onnx_path = export_to_onnx()
         
         >>> # Export specific model
         >>> onnx_path = export_to_onnx(
         ...     model_path='checkpoints/epoch_10.pth',
         ...     output_path='models/qrcode_classifier.onnx'
+        ... )
+        
+        >>> # Export QRCodeClassifier (3 channels)
+        >>> onnx_path = export_to_onnx(
+        ...     model_path='checkpoints/regular_model.pth',
+        ...     input_size=(3, 350, 350)
         ... )
     """
     # Import required modules
@@ -493,9 +502,42 @@ def export_to_onnx(
     checkpoint = torch.load(model_path, map_location=device)
     
     # Import model class
-    from src.model import QRCodeClassifier
+    from src.model import QRCodeClassifier, CrossAttentionQRCodeClassifier, create_model, create_contrastive_model
     
-    # Get model configuration from checkpoint or use defaults
+    # Detect model type from checkpoint or state_dict
+    model_type = checkpoint.get('model_type', None)
+    
+    if model_type is None:
+        # Try to infer from state dict structure
+        state_dict = checkpoint['model_state_dict']
+        
+        # Check for CrossAttentionQRCodeClassifier indicators
+        has_rgb_backbone = any('rgb_backbone' in key for key in state_dict.keys())
+        has_ref_backbone = any('ref_backbone' in key for key in state_dict.keys())
+        has_cross_attention = any('cross_attention' in key for key in state_dict.keys())
+        
+        if has_rgb_backbone or has_ref_backbone or has_cross_attention:
+            model_type = 'contrastive'
+        else:
+            model_type = 'regular'
+    
+    if verbose:
+        print(f"Detected model type: {model_type}")
+    
+    # Get model configuration
+    if 'num_classes' in checkpoint:
+        num_classes = checkpoint['num_classes']
+    else:
+        # Try to infer from state dict
+        try:
+            if model_type == 'contrastive':
+                num_classes = checkpoint['model_state_dict']['classifier.6.weight'].shape[0]
+            else:
+                num_classes = checkpoint['model_state_dict']['classifier.4.weight'].shape[0]
+        except:
+            num_classes = 3  # Default to 3 for multi-label mode
+    
+    # Get backbone model name
     if 'model_name' in checkpoint:
         model_name = checkpoint['model_name']
     else:
@@ -526,24 +568,39 @@ def export_to_onnx(
             else:
                 model_name = 'resnet50'
     
-    if 'num_classes' in checkpoint:
-        num_classes = checkpoint['num_classes']
+    # Create model based on type
+    if model_type == 'contrastive':
+        # Create CrossAttentionQRCodeClassifier
+        model = create_contrastive_model(
+            num_labels=num_classes,
+            model_name=model_name,
+            pretrained=False,
+            freeze_backbone=False,
+            device=device
+        )
+        
+        # For CrossAttentionQRCodeClassifier, we need 4 channels
+        if input_size[0] != 4:
+            if verbose:
+                print(f"⚠ Warning: CrossAttentionQRCodeClassifier requires 4-channel input")
+                print(f"  Adjusting input_size from {input_size} to (4, {input_size[1]}, {input_size[2]})")
+            input_size = (4, input_size[1], input_size[2])
     else:
-        # Try to infer from state dict
-        try:
-            num_classes = checkpoint['model_state_dict']['classifier.4.weight'].shape[0]
-        except:
-            num_classes = 3  # Default to 3 for multi-label mode
-
-    print(f"Detected model type: {model_name}")
-    
-    # Create model
-    model = QRCodeClassifier(
-        num_labels=num_classes,
-        model_name=model_name,
-        pretrained=False,
-        freeze_backbone=False
-    )
+        # Create QRCodeClassifier
+        model = create_model(
+            num_labels=num_classes,
+            model_name=model_name,
+            pretrained=False,
+            freeze_backbone=False,
+            device=device
+        )
+        
+        # For QRCodeClassifier, we need 3 channels
+        if input_size[0] != 3:
+            if verbose:
+                print(f"⚠ Warning: QRCodeClassifier requires 3-channel input")
+                print(f"  Adjusting input_size from {input_size} to (3, {input_size[1]}, {input_size[2]})")
+            input_size = (3, input_size[1], input_size[2])
     
     # Load weights
     model.load_state_dict(checkpoint['model_state_dict'])

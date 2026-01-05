@@ -73,7 +73,7 @@ Examples:
     parser.add_argument(
         '--input-size', '-s',
         type=int,
-        default=224,
+        default=384,
         help='Input image size (assumes square images). Default: 224'
     )
     
@@ -87,7 +87,7 @@ Examples:
     parser.add_argument(
         '--opset',
         type=int,
-        default=13,
+        default=14,
         help='ONNX opset version. Default: 11 (compatible with most OpenCV versions)'
     )
     
@@ -106,7 +106,7 @@ Examples:
     args = parser.parse_args()
     
     # Prepare arguments
-    input_size = (3, args.input_size, args.input_size)
+    input_size = (4, args.input_size, args.input_size)
     dynamic_axes = not args.no_dynamic
     verbose = not args.quiet
     
