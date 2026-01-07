@@ -103,6 +103,13 @@ Examples:
         help='Suppress detailed output'
     )
     
+    parser.add_argument(
+        '--version', '-v',
+        type=str,
+        default=None,
+        help='Add version number to ONNX model metadata'
+    )
+    
     args = parser.parse_args()
     
     # Prepare arguments
@@ -119,7 +126,8 @@ Examples:
             batch_size=args.batch_size,
             opset_version=args.opset,
             dynamic_axes=dynamic_axes,
-            verbose=verbose
+            verbose=verbose,
+            version=args.version
         )
         
         if not verbose:
