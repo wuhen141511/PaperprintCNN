@@ -422,7 +422,8 @@ def export_to_onnx(
     batch_size: int = 1,
     opset_version: int = 11,
     dynamic_axes: bool = True,
-    verbose: bool = True
+    verbose: bool = True,
+    version: Optional[str] = None
 ) -> str:
     """
     Export PyTorch model (.pth) to ONNX format for C++ and OpenCV deployment.
@@ -440,6 +441,7 @@ def export_to_onnx(
         opset_version: ONNX opset version. Default: 11 (compatible with most OpenCV versions)
         dynamic_axes: Whether to use dynamic batch size. Default: True
         verbose: Whether to print detailed information. Default: True
+        version: Version number to add to ONNX model metadata. Default: None
         
     Returns:
         Path to the exported ONNX model
@@ -649,8 +651,8 @@ def export_to_onnx(
             do_constant_folding=True,      # Optimize constant folding
             input_names=['input'],         # Input names
             output_names=['output'],       # Output names
-            dynamic_axes=dynamic_axes_dict,# Dynamic axes
-            dynamo=False                   # Use legacy TorchScript-based exporter
+            dynamic_axes=dynamic_axes_dict# Dynamic axes
+            # dynamo=False                   # Use legacy TorchScript-based exporter
         )
         
         if verbose:
@@ -660,7 +662,21 @@ def export_to_onnx(
         # Verify the exported model
         try:
             import onnx
+            from onnx import helper
+            
             onnx_model = onnx.load(str(output_path))
+            
+            # Add version metadata if provided
+            if version is not None:
+                # 添加元数据（包括版本号）
+                meta = onnx_model.metadata_props.add()
+                meta.key = "custom_version"
+                meta.value = version
+                # Save the model with updated metadata
+                onnx.save(onnx_model, str(output_path))
+                if verbose:
+                    print(f"✓ Added version {version} to ONNX model metadata")
+            
             onnx.checker.check_model(onnx_model)
             
             if verbose:
