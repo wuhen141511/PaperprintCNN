@@ -22,7 +22,7 @@ if __name__ == '__main__':
     history = train_model(
         train_dir='data/train',
         val_dir='data/val',
-        model_name='convnextv2_tiny',
+        model_name='convnextv2_pico',
         num_labels=4,  # Multi-label count
         batch_size=16,  # 减小batch size适应384x384输入
         learning_rate=1e-4,  # 使用较小学习率
@@ -33,8 +33,8 @@ if __name__ == '__main__':
         log_dir='logs',
         multi_label=True,
         label_names=["is_copied", "is_low_light", "is_blurry", "is_screen"],
-        load_checkpoint_path=None,  # Set to checkpoint path to resume training，default is None
-        pretrained_path=r'checkpoints/convnextv2_tiny_22k_384_ema.pt',  # Load local weights
+        load_checkpoint_path= None,  # Set to checkpoint path to resume training，default is None
+        pretrained_path=None,  # Load local weights
         use_contrastive=True,  # 启用对比学习
         contrastive_weight=0.3,  # 对比学习权重
         classification_weight=1.0  # 分类损失权重

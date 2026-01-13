@@ -23,7 +23,7 @@ def batch_predict(image_dir, checkpoint_path='checkpoints/checkpoint_epoch_27.pt
     # 创建预测器
     predictor = QRCodePredictor(
         checkpoint_path=checkpoint_path,
-        model_name='convnextv2_tiny',
+        model_name='convnextv2_pico',
         backend='opencv',
         multi_label=multi_label,
         use_contrastive=use_contrastive
@@ -129,7 +129,7 @@ if __name__ == '__main__':
     parser.add_argument(
         '--checkpoint',
         type=str,
-        default='checkpoints/best_model_34.pth',
+        default='checkpoints/best_model_pico.pth',
         help='模型检查点路径'
     )
     
