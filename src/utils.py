@@ -651,8 +651,8 @@ def export_to_onnx(
             do_constant_folding=True,      # Optimize constant folding
             input_names=['input'],         # Input names
             output_names=['output'],       # Output names
-            dynamic_axes=dynamic_axes_dict# Dynamic axes
-            # dynamo=False                   # Use legacy TorchScript-based exporter
+            dynamic_axes=dynamic_axes_dict,# Dynamic axes
+            dynamo=False                   # Use legacy TorchScript-based exporter
         )
         
         if verbose:

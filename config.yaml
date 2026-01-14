@@ -11,7 +11,7 @@ data:
 
 # Model settings
 model:
-  name: "convnextv2_tiny"  # Options: convnextv2_tiny, resnet50, resnet18, efficientnet_b0, mobilenet_v3_small
+  name: "convnextv2_pico"  # Options: convnextv2_tiny, resnet50, resnet18, efficientnet_b0, mobilenet_v3_small
   num_labels: 4  # Multi-label: is_copied, is_blurry, is_low_light, is_screen
   pretrained: true
   pretrained_path: "checkpoints/convnextv2_tiny_22k_384_ema.pt" # Local path to pretrained weights
