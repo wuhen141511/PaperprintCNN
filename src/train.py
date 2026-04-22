@@ -10,7 +10,7 @@ import torch.nn as nn
 import torch.optim as optim
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
-from typing import Dict, List, Tuple
+from typing import Dict, List, Tuple, Union
 import json
 
 from src.model import create_model
@@ -30,7 +30,7 @@ class Trainer:
         batch_size: int = 32,
         learning_rate: float = 0.001,
         num_epochs: int = 20,
-        image_size: int = 224,
+        image_size: Union[int, Tuple[int, int]] = 224,
         freeze_backbone: bool = True,
         checkpoint_dir: str = 'checkpoints',
         log_dir: str = 'logs',
@@ -56,7 +56,7 @@ class Trainer:
             batch_size: Batch size for training
             learning_rate: Initial learning rate
             num_epochs: Number of training epochs
-            image_size: Input image size
+            image_size: Input image size as int (square) or tuple (height, width) for rectangular
             freeze_backbone: Whether to freeze backbone initially
             checkpoint_dir: Directory to save checkpoints
             log_dir: Directory for TensorBoard logs
@@ -65,9 +65,11 @@ class Trainer:
             multi_label: Whether to use multi-label classification
             label_names: List of label names for multi-label classification
             load_checkpoint_path: Optional path to checkpoint file to resume training
+            pretrained_path: Optional path to local pretrained weights
             use_contrastive: Whether to use contrastive learning
             contrastive_weight: Weight for contrastive loss
             classification_weight: Weight for classification loss
+            use_gray: Whether using grayscale images
         """
         # Set random seed
         set_seed(seed)
@@ -412,7 +414,7 @@ def train_model(
     batch_size: int = 32,
     learning_rate: float = 0.001,
     num_epochs: int = 20,
-    image_size: int = 224,
+    image_size: Union[int, Tuple[int, int]] = 224,
     freeze_backbone: bool = True,
     checkpoint_dir: str = 'checkpoints',
     log_dir: str = 'logs',
@@ -436,7 +438,7 @@ def train_model(
         batch_size: Batch size for training
         learning_rate: Initial learning rate
         num_epochs: Number of training epochs
-        image_size: Input image size
+        image_size: Input image size as int (square) or tuple (height, width) for rectangular
         freeze_backbone: Whether to freeze backbone initially
         checkpoint_dir: Directory to save checkpoints
         log_dir: Directory for TensorBoard logs
@@ -447,6 +449,7 @@ def train_model(
         use_contrastive: Whether to use contrastive learning
         contrastive_weight: Weight for contrastive loss
         classification_weight: Weight for classification loss
+        use_gray: Whether using grayscale images
     """
     trainer = Trainer(
         train_dir=train_dir,

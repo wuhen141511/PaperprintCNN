@@ -23,21 +23,21 @@ if __name__ == '__main__':
         train_dir='data/train',
         val_dir='data/val',
         model_name='convnextv2_pico',
-        num_labels=4,  # Multi-label count
-        batch_size=16,  # 减小batch size适应384x384输入
-        learning_rate=1e-4,  # 使用较小学习率
-        num_epochs=40,  # 增加epoch数
-        image_size=384,  # 使用384x384输入尺寸
+        num_labels=4,
+        batch_size=16,
+        learning_rate=1e-4,
+        num_epochs=40,
+        image_size=(384, 384),  # 矩形输入: (height, width)
         freeze_backbone=True,
         checkpoint_dir='checkpoints',
         log_dir='logs',
         multi_label=True,
         label_names=["is_copied", "is_low_light", "is_blurry", "is_screen"],
-        load_checkpoint_path= None,  # Set to checkpoint path to resume training，default is None
-        pretrained_path=None,  # Load local weights
-        use_contrastive=False,  # 启用对比学习
-        contrastive_weight=0.3,  # 对比学习权重
-        classification_weight=1.0,  # 分类损失权重
+        load_checkpoint_path=None,
+        pretrained_path=None,
+        use_contrastive=False,
+        contrastive_weight=0.3,
+        classification_weight=1.0,
         use_gray=False
     )
     

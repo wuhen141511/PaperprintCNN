@@ -28,30 +28,30 @@ class OpenCVTransform:
     OpenCV-based preprocessing to match C++ deployment exactly.
     Input: PIL Image (RGB) or numpy array (RGB or RGBA)
     Output: Tensor [C, H, W] normalized
+    
+    Supports both square and rectangular images.
+    Args:
+        image_size: Target image size as int (square) or tuple (height, width) for rectangular
+        mean: Mean values for normalization
+        std: Standard deviation values for normalization
     """
-    def __init__(self, image_size: int, mean: list, std: list):
-        self.image_size = image_size
+    def __init__(self, image_size: Union[int, Tuple[int, int]], mean: list, std: list):
+        if isinstance(image_size, int):
+            self.image_size = (image_size, image_size)
+        else:
+            self.image_size = image_size
         self.mean = np.array(mean, dtype=np.float32)
         self.std = np.array(std, dtype=np.float32)
-        
-        # Ensure mean/std match channel count (handle broadcasting if needed, 
-        # but for safety we want explicit shapes)
-        # We process in HWC then transpose, so mean/std should be (C,) or broadcastable.
 
     def __call__(self, img):
-        # 1. Convert PIL to numpy
         if isinstance(img, Image.Image):
             img = np.array(img)
         
-        # 2. Resize using OpenCV (Bilinear default)
-        # Note: cv2.resize expects (width, height) - reverse of numpy shape
-        img = cv2.resize(img, (self.image_size, self.image_size), interpolation=cv2.INTER_LINEAR)
+        img = cv2.resize(img, (self.image_size[1], self.image_size[0]), interpolation=cv2.INTER_LINEAR)
         
-        # 3. Normalize
         img = img.astype(np.float32) / 255.0
         img = (img - self.mean) / self.std
         
-        # 4. To Tensor [H, W, C] -> [C, H, W]
         img = img.transpose(2, 0, 1)
         return torch.from_numpy(img)
 
@@ -361,9 +361,9 @@ class QRCodeMultiLabelDataset(Dataset):
 
 
 def get_transforms(
-    image_size: int = 384, 
-    augment: bool = True,
-    backend: str = 'opencv',  # Options: 'pil', 'opencv'
+    image_size: Union[int, Tuple[int, int]] = 384,
+    augment: bool = False,
+    backend: str = 'pil',
     use_contrastive: bool = False,
     use_gray: bool = False
 ):
@@ -371,9 +371,11 @@ def get_transforms(
     Get image transforms for training and validation.
     
     Args:
-        image_size: Target image size
+        image_size: Target image size as int (square) or tuple (height, width) for rectangular
         augment: Whether to apply data augmentation (images only)
         backend: 'pil' (default PyTorch) or 'opencv' (match C++ result)
+        use_contrastive: Whether using contrastive learning (4 channels)
+        use_gray: Whether using grayscale images
         
     Returns:
         transform function/object
@@ -401,11 +403,12 @@ def get_transforms(
 
     # Prepare logic for Resize step
     if backend == 'opencv':
-        # Use OpenCV for resizing (to align with deployment), assume square
         resize_transform = OpenCVResize(image_size)
     else:
-        # Standard PIL resizing
-        resize_transform = transforms.Resize((image_size, image_size))
+        if isinstance(image_size, int):
+            resize_transform = transforms.Resize((image_size, image_size))
+        else:
+            resize_transform = transforms.Resize((image_size[0], image_size[1]))
 
     if augment:
         # Training transforms with augmentation
@@ -436,7 +439,7 @@ def create_dataloaders(
     train_dir: str,
     val_dir: str,
     batch_size: int = 32,
-    image_size: int = 384,
+    image_size: Union[int, Tuple[int, int]] = 384,
     num_workers: int = 0,
     backend: str = 'opencv',
     multi_label: bool = False,
@@ -451,11 +454,13 @@ def create_dataloaders(
         train_dir: Path to training data directory
         val_dir: Path to validation data directory
         batch_size: Batch size for data loaders
-        image_size: Target image size
+        image_size: Target image size as int (square) or tuple (height, width) for rectangular
         num_workers: Number of worker processes for data loading
         backend: 'pil' or 'opencv' for preprocessing
         multi_label: If True, use multi-label dataset (requires annotations.json)
         label_names: List of label names for multi-label classification
+        use_contrastive: Whether using contrastive learning
+        use_gray: Whether using grayscale images
         
     Returns:
         Tuple of (train_loader, val_loader, classes/label_names)
@@ -521,13 +526,15 @@ def create_dataloaders(
     return train_loader, val_loader, metadata
 
 
-def get_inference_transform(image_size: int = 384, backend: str = 'opencv', use_contrastive: bool = False, use_gray: bool = False):
+def get_inference_transform(image_size: Union[int, Tuple[int, int]] = 384, backend: str = 'opencv', use_contrastive: bool = False, use_gray: bool = False):
     """
     Get transform for inference on single images.
     
     Args:
-        image_size: Target image size
+        image_size: Target image size as int (square) or tuple (height, width) for rectangular
         backend: 'pil' (default) or 'opencv'
+        use_contrastive: Whether using contrastive learning (4 channels)
+        use_gray: Whether using grayscale images
         
     Returns:
         transform function/object
