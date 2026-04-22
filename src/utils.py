@@ -553,32 +553,8 @@ def export_to_onnx(
     if 'model_name' in checkpoint:
         model_name = checkpoint['model_name']
     else:
-        # Try to read from config.yaml first
-        try:
-            import yaml
-            config_path = Path('config.yaml')
-            if config_path.exists():
-                with open(config_path, 'r', encoding='utf-8') as f:
-                    config = yaml.safe_load(f)
-                    model_name = config.get('model', {}).get('name', 'resnet50')
-            else:
-                # Fallback: try to infer model type from state dict structure
-                state_dict = checkpoint['model_state_dict']
-                if any('backbone.stages' in key for key in state_dict.keys()):
-                    model_name = 'convnextv2_tiny'  # ConvNeXtV2 has stages structure
-                elif any('backbone.stem' in key for key in state_dict.keys()):
-                    model_name = 'convnextv2_tiny'  # ConvNeXtV2 has stem structure
-                else:
-                    model_name = 'resnet50'  # Default
-        except Exception:
-            # Final fallback: infer from state dict
-            state_dict = checkpoint['model_state_dict']
-            if any('backbone.stages' in key for key in state_dict.keys()):
-                model_name = 'convnextv2_tiny'
-            elif any('backbone.stem' in key for key in state_dict.keys()):
-                model_name = 'convnextv2_tiny'
-            else:
-                model_name = 'resnet50'
+        # 直接错报
+        raise ValueError("Error: 'model_type' and 'num_labels' are required if 'model_name' not found in checkpoint")
     
     # Create model based on type
     if model_type == 'contrastive':
@@ -623,6 +599,7 @@ def export_to_onnx(
     if verbose:
         print(f"✓ Model loaded successfully")
         print(f"  - Architecture: {model_name}")
+        print(f"  - Type:         {model_type}")
         print(f"  - Classes:      {num_classes}")
         if 'epoch' in checkpoint:
             print(f"  - Epoch:        {checkpoint['epoch']}")
