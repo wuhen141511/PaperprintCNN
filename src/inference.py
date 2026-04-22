@@ -126,32 +126,7 @@ class QRCodePredictor:
             image_4c = image
         else:
             # Handle 1-channel or 3-channel images (e.g., JPGs) by registering 4th channel
-            image = image.convert('RGB')
-            
-            # Initialize registrator if needed
-            if self.registrator is None:
-                self.registrator = QRCodeRegistrator(self.wqmodules_dir)
-                
-            # Get 4th channel
-            # We need numpy array for processing
-            img_np = np.array(image)
-            # Note: PIL Open is RGB, OpenCV uses BGR. 
-            # But our registrator uses detector which expects OpenCV usually BGR.
-            img_bgr = cv2.cvtColor(img_np, cv2.COLOR_RGB2BGR)
-            
-            fourth_channel = self.registrator.get_fourth_channel(img_bgr, self.register_dir)
-            
-            # Merge channels: RGB + Gray -> 4 channels
-            if fourth_channel.shape != img_np.shape[:2]:
-                 # Resize 4th channel to match if strictly needed
-                 fourth_channel = cv2.resize(fourth_channel, (img_np.shape[1], img_np.shape[0]))
-                 
-            combined_img = np.dstack((img_np, fourth_channel))
-            
-            # Convert back to PIL for transforms
-            # Most PIL transforms support 4 channels (RGBA).
-            # We are using the Alpha channel as our registration channel.
-            image_4c = Image.fromarray(combined_img, 'RGBA')
+            image_4c = image.convert('RGB')         
         
         image_tensor = self.transform(image_4c).unsqueeze(0).to(self.device)
         

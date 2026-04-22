@@ -35,7 +35,7 @@ if __name__ == '__main__':
         label_names=["is_copied", "is_low_light", "is_blurry", "is_screen"],
         load_checkpoint_path= None,  # Set to checkpoint path to resume training，default is None
         pretrained_path=None,  # Load local weights
-        use_contrastive=True,  # 启用对比学习
+        use_contrastive=False,  # 启用对比学习
         contrastive_weight=0.3,  # 对比学习权重
         classification_weight=1.0  # 分类损失权重
     )

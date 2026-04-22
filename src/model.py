@@ -92,7 +92,7 @@ class QRCodeClassifier(nn.Module):
         model_name: str = 'resnet50',
         pretrained: bool = True,
         freeze_backbone: bool = False,
-        in_channels: int = 4,
+        in_channels: int = 3,
         pretrained_path: str = None
     ):
         """
@@ -354,7 +354,7 @@ def create_model(
             pretrained=pretrained,
             freeze_backbone=freeze_backbone,
             device=device,
-            in_channels=in_channels,
+            in_channels=4,
             pretrained_path=pretrained_path
         )
     else:
@@ -363,7 +363,7 @@ def create_model(
             model_name=model_name,
             pretrained=pretrained,
             freeze_backbone=freeze_backbone,
-            in_channels=in_channels,
+            in_channels=3,
             pretrained_path=pretrained_path
         )
         model = model.to(device)

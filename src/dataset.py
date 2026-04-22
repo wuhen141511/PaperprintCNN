@@ -348,32 +348,7 @@ class QRCodeMultiLabelDataset(Dataset):
             image_4c = image
         else:
             # Handle 1-channel or 3-channel images (e.g., JPGs) by registering 4th channel
-            image = image.convert('RGB')
-            
-            # Initialize registrator if needed
-            if self.registrator is None:
-                self.registrator = QRCodeRegistrator(self.wqmodules_dir)
-                
-            # Get 4th channel
-            # We need numpy array for processing
-            img_np = np.array(image)
-            # Note: PIL Open is RGB, OpenCV uses BGR. 
-            # But our registrator uses detector which expects OpenCV usually BGR.
-            img_bgr = cv2.cvtColor(img_np, cv2.COLOR_RGB2BGR)
-            
-            fourth_channel = self.registrator.get_fourth_channel(img_bgr, self.register_dir)
-            
-            # Merge channels: RGB + Gray -> 4 channels
-            if fourth_channel.shape != img_np.shape[:2]:
-                 # Resize 4th channel to match if strictly needed
-                 fourth_channel = cv2.resize(fourth_channel, (img_np.shape[1], img_np.shape[0]))
-                 
-            combined_img = np.dstack((img_np, fourth_channel))
-            
-            # Convert back to PIL for transforms
-            # Most PIL transforms support 4 channels (RGBA).
-            # We are using the Alpha channel as our registration channel.
-            image_4c = Image.fromarray(combined_img, 'RGBA')
+            image_4c = image.convert('RGB')
         
         # Apply transforms
         if self.transform:
@@ -388,7 +363,9 @@ class QRCodeMultiLabelDataset(Dataset):
 def get_transforms(
     image_size: int = 384, 
     augment: bool = True,
-    backend: str = 'opencv'  # Options: 'pil', 'opencv'
+    backend: str = 'opencv',  # Options: 'pil', 'opencv'
+    in_channels: int = 3,
+    use_gray: bool = False
 ):
     """
     Get image transforms for training and validation.
@@ -401,8 +378,22 @@ def get_transforms(
     Returns:
         transform function/object
     """
-    mean = [0.485, 0.456, 0.406, 0.456] # Added 4th channel mean (approx same as Green)
-    std = [0.229, 0.224, 0.225, 0.224]  # Added 4th channel std
+
+    # 默认是4通道 非gray图
+    if in_channels == 4:
+        if use_gray:
+            mean = [0.449, 0.449, 0.449, 0.449] 
+            std = [0.226, 0.226, 0.226, 0.226] 
+        else:
+            mean = [0.485, 0.456, 0.406, 0.449]
+            std = [0.229, 0.224, 0.225, 0.226] 
+    else:
+        if use_gray:
+            mean = [0.449, 0.449, 0.449] 
+            std = [0.226, 0.226, 0.226]
+        else:
+            mean = [0.485, 0.456, 0.406] 
+            std = [0.229, 0.224, 0.225]
 
     # For pure inference without augmentations, use the dedicated OpenCVTransform
     if backend == 'opencv' and not augment:
