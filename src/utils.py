@@ -51,10 +51,10 @@ def get_device():
     return device
 
 
-def save_checkpoint(model, optimizer, epoch, loss, accuracy, filepath):
+def save_checkpoint(model, optimizer, epoch, loss, accuracy, filepath, model_type=None, model_name=None, num_labels=None):
     """
     Save model checkpoint.
-    
+
     Args:
         model: PyTorch model
         optimizer: Optimizer
@@ -62,6 +62,9 @@ def save_checkpoint(model, optimizer, epoch, loss, accuracy, filepath):
         loss: Current loss
         accuracy: Current accuracy
         filepath: Path to save checkpoint
+        model_type: Type of model ('regular' or 'contrastive')
+        model_name: Name of the backbone model (e.g., 'resnet50', 'convnextv2_tiny')
+        num_labels: Number of labels (for multi-label) or classes (for single-class)
     """
     os.makedirs(os.path.dirname(filepath), exist_ok=True)
     checkpoint = {
@@ -70,6 +73,9 @@ def save_checkpoint(model, optimizer, epoch, loss, accuracy, filepath):
         'optimizer_state_dict': optimizer.state_dict(),
         'loss': loss,
         'accuracy': accuracy,
+        'model_type': model_type,
+        'model_name': model_name,
+        'num_labels': num_labels,
     }
     torch.save(checkpoint, filepath)
     print(f"Checkpoint saved to {filepath}")
@@ -531,17 +537,17 @@ def export_to_onnx(
         print(f"Detected model type: {model_type}")
     
     # Get model configuration
-    if 'num_classes' in checkpoint:
-        num_classes = checkpoint['num_classes']
+    if 'num_labels' in checkpoint:
+        num_labels = checkpoint['num_labels']
     else:
         # Try to infer from state dict
         try:
             if model_type == 'contrastive':
-                num_classes = checkpoint['model_state_dict']['classifier.6.weight'].shape[0]
+                num_labels = checkpoint['model_state_dict']['classifier.6.weight'].shape[0]
             else:
-                num_classes = checkpoint['model_state_dict']['classifier.4.weight'].shape[0]
+                num_labels = checkpoint['model_state_dict']['classifier.4.weight'].shape[0]
         except:
-            num_classes = 4  # Default to 4 for multi-label mode
+            num_labels = 4  # Default to 4 for multi-label mode
     
     # Get backbone model name
     if 'model_name' in checkpoint:
@@ -578,7 +584,7 @@ def export_to_onnx(
     if model_type == 'contrastive':
         # Create CrossAttentionQRCodeClassifier
         model = create_contrastive_model(
-            num_labels=num_classes,
+            num_labels=num_labels,
             model_name=model_name,
             pretrained=False,
             freeze_backbone=False,
@@ -594,11 +600,12 @@ def export_to_onnx(
     else:
         # Create QRCodeClassifier
         model = create_model(
-            num_labels=num_classes,
+            num_labels=num_labels,
             model_name=model_name,
             pretrained=False,
             freeze_backbone=False,
-            device=device
+            device=device,
+            use_contrastive=False,
         )
         
         # For QRCodeClassifier, we need 3 channels

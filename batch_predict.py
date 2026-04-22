@@ -9,7 +9,7 @@ import time
 from src.inference import QRCodePredictor
 
 def batch_predict(image_dir, checkpoint_path='checkpoints/checkpoint_epoch_27.pth', 
-                  output_csv='predictions.csv', multi_label=True, use_contrastive=False):
+                  output_csv='predictions.csv', multi_label=True, use_contrastive=False, use_gray=False):
     """
     批量预测目录中的所有图片
     
@@ -26,7 +26,8 @@ def batch_predict(image_dir, checkpoint_path='checkpoints/checkpoint_epoch_27.pt
         model_name='convnextv2_pico',
         backend='opencv',
         multi_label=multi_label,
-        use_contrastive=use_contrastive
+        use_contrastive=use_contrastive,
+        use_gray=use_gray
     )
     
     # 获取标签列表

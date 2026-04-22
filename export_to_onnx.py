@@ -76,7 +76,14 @@ Examples:
         default=384,
         help='Input image size (assumes square images). Default: 224'
     )
-    
+
+    parser.add_argument(
+        '--input-channels', '-c',
+        type=int,
+        default=4,
+        help='Number of input channels. Default: 4'
+    )
+
     parser.add_argument(
         '--batch-size', '-b',
         type=int,
@@ -113,7 +120,7 @@ Examples:
     args = parser.parse_args()
     
     # Prepare arguments
-    input_size = (4, args.input_size, args.input_size)
+    input_size = (args.input_channels, args.input_size, args.input_size)
     dynamic_axes = not args.no_dynamic
     verbose = not args.quiet
     

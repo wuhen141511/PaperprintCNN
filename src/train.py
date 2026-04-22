@@ -42,7 +42,8 @@ class Trainer:
         pretrained_path: str = None,
         use_contrastive: bool = False,
         contrastive_weight: float = 0.3,
-        classification_weight: float = 1.0
+        classification_weight: float = 1.0,
+        use_gray: bool = False
     ):
         """
         Initialize trainer.
@@ -88,11 +89,16 @@ class Trainer:
             image_size=image_size,
             num_workers=0,  # Set to 0 for Windows compatibility
             multi_label=multi_label,
-            label_names=label_names
+            label_names=label_names,
+            use_contrastive=use_contrastive,
+            use_gray=use_gray
         )
         
         # Create model
         print("\nCreating model...")
+        self.model_name = model_name
+        self.model_type = 'contrastive' if use_contrastive else 'regular'
+        self.num_labels = num_labels
         self.model = create_model(
             num_labels=num_labels,
             model_name=model_name,
@@ -357,16 +363,18 @@ class Trainer:
             # Save checkpoint
             checkpoint_path = os.path.join(self.checkpoint_dir, f'checkpoint_epoch_{epoch}.pth')
             save_checkpoint(
-                self.model, self.optimizer, epoch, val_loss, val_acc, checkpoint_path
+                self.model, self.optimizer, epoch, val_loss, val_acc, checkpoint_path,
+                model_type=self.model_type, model_name=self.model_name, num_labels=self.num_labels
             )
-            
+
             # Save best model
             if val_acc > self.best_val_acc:
                 self.best_val_acc = val_acc
                 self.best_epoch = epoch
                 best_path = os.path.join(self.checkpoint_dir, 'best_model.pth')
                 save_checkpoint(
-                    self.model, self.optimizer, epoch, val_loss, val_acc, best_path
+                    self.model, self.optimizer, epoch, val_loss, val_acc, best_path,
+                    model_type=self.model_type, model_name=self.model_name, num_labels=self.num_labels
                 )
                 print(f"  ✓ New best model saved! (Acc: {val_acc:.4f})")
             
@@ -414,7 +422,8 @@ def train_model(
     pretrained_path: str = None,
     use_contrastive: bool = False,
     contrastive_weight: float = 0.3,
-    classification_weight: float = 1.0
+    classification_weight: float = 1.0,
+    use_gray: bool = False
 ):
     """
     Convenience function to train a model.
@@ -457,7 +466,8 @@ def train_model(
         pretrained_path=pretrained_path,
         use_contrastive=use_contrastive,
         contrastive_weight=contrastive_weight,
-        classification_weight=classification_weight
+        classification_weight=classification_weight,
+        use_gray=use_gray
     )
     
     history = trainer.train()

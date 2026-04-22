@@ -37,7 +37,8 @@ if __name__ == '__main__':
         pretrained_path=None,  # Load local weights
         use_contrastive=False,  # 启用对比学习
         contrastive_weight=0.3,  # 对比学习权重
-        classification_weight=1.0  # 分类损失权重
+        classification_weight=1.0,  # 分类损失权重
+        use_gray=False
     )
     
     print("\n" + "="*60)

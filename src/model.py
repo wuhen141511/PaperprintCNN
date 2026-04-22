@@ -327,8 +327,7 @@ def create_model(
     pretrained: bool = True,
     freeze_backbone: bool = False,
     device: str = 'cpu',
-    in_channels: int = 4,
-    pretrained_path: str = r'checkpoints/convnextv2_tiny_22k_384_ema.pt',
+    pretrained_path: str = None,
     use_contrastive: bool = False
 ):
     """

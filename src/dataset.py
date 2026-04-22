@@ -364,7 +364,7 @@ def get_transforms(
     image_size: int = 384, 
     augment: bool = True,
     backend: str = 'opencv',  # Options: 'pil', 'opencv'
-    in_channels: int = 3,
+    use_contrastive: bool = False,
     use_gray: bool = False
 ):
     """
@@ -380,7 +380,7 @@ def get_transforms(
     """
 
     # 默认是4通道 非gray图
-    if in_channels == 4:
+    if use_contrastive:
         if use_gray:
             mean = [0.449, 0.449, 0.449, 0.449] 
             std = [0.226, 0.226, 0.226, 0.226] 
@@ -440,7 +440,9 @@ def create_dataloaders(
     num_workers: int = 0,
     backend: str = 'opencv',
     multi_label: bool = False,
-    label_names: List[str] = None
+    label_names: List[str] = None,
+    use_contrastive: bool = False,
+    use_gray: bool = False
 ) -> Tuple[DataLoader, DataLoader, Union[list, List[str]]]:
     """
     Create training and validation data loaders.
@@ -459,10 +461,10 @@ def create_dataloaders(
         Tuple of (train_loader, val_loader, classes/label_names)
     """
     # Get transforms (Training usually stays on PIL for augmentation support)
-    train_transform = get_transforms(image_size=image_size, augment=True, backend=backend)
+    train_transform = get_transforms(image_size=image_size, augment=True, backend=backend, use_contrastive=use_contrastive, use_gray=use_gray)
     
     # Validation can use PIL or OpenCV, stick to PIL for standard training metrics
-    val_transform = get_transforms(image_size=image_size, augment=False, backend=backend)
+    val_transform = get_transforms(image_size=image_size, augment=False, backend=backend, use_contrastive=use_contrastive, use_gray=use_gray)
     
     # Create datasets based on classification type
     if multi_label:
@@ -519,7 +521,7 @@ def create_dataloaders(
     return train_loader, val_loader, metadata
 
 
-def get_inference_transform(image_size: int = 384, backend: str = 'opencv'):
+def get_inference_transform(image_size: int = 384, backend: str = 'opencv', use_contrastive: bool = False, use_gray: bool = False):
     """
     Get transform for inference on single images.
     
@@ -530,4 +532,4 @@ def get_inference_transform(image_size: int = 384, backend: str = 'opencv'):
     Returns:
         transform function/object
     """
-    return get_transforms(image_size=image_size, augment=False, backend=backend)
+    return get_transforms(image_size=image_size, augment=False, backend=backend, use_contrastive=use_contrastive, use_gray=use_gray)

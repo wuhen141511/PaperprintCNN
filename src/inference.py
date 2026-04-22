@@ -41,7 +41,8 @@ class QRCodePredictor:
         threshold: float = 0.5,
         register_dir: str = 'data/register',
         wqmodules_dir: str = 'wqmodules',
-        use_contrastive: bool = False
+        use_contrastive: bool = False,
+        use_gray: bool = False,
     ):
         """
         Initialize predictor.
@@ -70,7 +71,7 @@ class QRCodePredictor:
         self.registrator = QRCodeRegistrator(wqmodules_dir)
         
         # Use the requested backend
-        self.transform = get_inference_transform(image_size, backend=backend)
+        self.transform = get_inference_transform(image_size, backend=backend, use_contrastive=use_contrastive, use_gray=use_gray)
         self.backend = backend
         
         # Load label/class names
