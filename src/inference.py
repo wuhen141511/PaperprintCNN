@@ -96,7 +96,6 @@ class QRCodePredictor:
             num_labels=num_labels,
             model_name=model_name,
             device=self.device,
-            in_channels=4,
             use_contrastive=self.use_contrastive
         )
         

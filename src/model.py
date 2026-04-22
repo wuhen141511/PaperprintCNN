@@ -378,7 +378,6 @@ def load_model_for_inference(
     num_labels: int = 3, 
     model_name: str = 'resnet50', 
     device: str = 'cpu',
-    in_channels: int = 4,
     use_contrastive: bool = False
 ):
     """
@@ -403,7 +402,7 @@ def load_model_for_inference(
             pretrained=False,
             freeze_backbone=False,
             device=device,
-            in_channels=in_channels
+            in_channels=4
         )
     else:
         # 标准模型
@@ -413,7 +412,7 @@ def load_model_for_inference(
             pretrained=False,
             freeze_backbone=False,
             device=device,
-            in_channels=in_channels
+            in_channels=3
         )
     
     checkpoint = torch.load(checkpoint_path, map_location=device)

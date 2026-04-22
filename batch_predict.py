@@ -155,11 +155,18 @@ if __name__ == '__main__':
         help='使用对比学习模型'
     )
     
+    parser.add_argument(
+        '--use-gray',
+        action='store_true',
+        default=False,
+        help='使用灰度图像输入'
+    )
+    
     args = parser.parse_args()
     
     if not os.path.exists(args.image_dir):
         print(f"错误：目录不存在: {args.image_dir}")
         sys.exit(1)
     
-    batch_predict(args.image_dir, args.checkpoint, args.csv, args.multi_label, args.use_contrastive)
+    batch_predict(args.image_dir, args.checkpoint, args.csv, args.multi_label, args.use_contrastive, args.use_gray)
 
