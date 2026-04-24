@@ -63,3 +63,5 @@ htmlcov/
 *.tmp
 temp/
 tmp/
+upload/
+upload_temp/
