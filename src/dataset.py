@@ -128,17 +128,21 @@ class QRCodeDataset(Dataset):
                 image2.jpg
     """
     
-    def __init__(self, data_dir: str, transform=None):
+    def __init__(self, data_dir: str, transform=None, use_gray: bool = False):
         """
         Args:
             data_dir: Root directory containing class subdirectories
             transform: Optional transform to be applied on images
+            use_gray: Whether to convert images to grayscale
+            use_contrastive: Whether to use contrastive learning
         """
         self.data_dir = data_dir
         self.transform = transform
         self.samples = []
         self.class_to_idx = {}
         self.classes = []
+        self.use_gray = use_gray
+        self.use_contrastive = use_contrastive
         
         # Load dataset
         self._load_dataset()
@@ -229,7 +233,9 @@ class QRCodeMultiLabelDataset(Dataset):
         transform=None,
         label_names: List[str] = None,
         register_dir: str = None,
-        wqmodules_dir: str = 'wqmodules'
+        wqmodules_dir: str = 'wqmodules',
+        use_contrastive: bool = False,
+        use_gray: bool = False
     ):
         """
         Args:
@@ -237,12 +243,16 @@ class QRCodeMultiLabelDataset(Dataset):
             annotation_file: Path to JSON annotation file. If None, looks for 'annotations.json' in data_dir
             transform: Optional transform to be applied on images
             label_names: List of label names (default: ["is_copied", "is_low_light", "is_blurry", "is_screen"])
+            use_contrastive: Whether to use contrastive learning
+            use_gray: Whether to convert images to grayscale
         """
         self.data_dir = data_dir
         self.transform = transform
         self.label_names = label_names or ["is_copied", "is_low_light", "is_blurry", "is_screen"]
         self.num_labels = len(self.label_names)
         self.samples = []
+        self.use_gray = use_gray
+        self.use_contrastive = use_contrastive
         
         # Determine annotation file path
         if annotation_file is None:
@@ -339,25 +349,53 @@ class QRCodeMultiLabelDataset(Dataset):
     
     def __getitem__(self, idx):
         img_path, labels = self.samples[idx]
-        
+
         # Load image
         image = Image.open(img_path)
-        
-        if image.mode == 'RGBA':
-            # Directly use 4-channel image (e.g., PNG with alpha)
-            image_4c = image
+
+        if self.use_contrastive:
+            # Use 4-channel image for contrastive learning
+            if image.mode == 'RGBA':
+                # Split RGBA channels
+                r, g, b, a = image.split()
+                # Convert RGB to grayscale and replicate
+                if self.use_gray:
+                    gray = Image.merge('RGB', [r, g, b]).convert('L')
+                    r = gray
+                    g = gray
+                    b = gray
+                # Merge back to RGBA
+                image = Image.merge('RGBA', [r, g, b, a])
+            else:
+                # Convert to RGBA first
+                rgb_img = image.convert('RGB')
+                if self.use_gray:
+                    gray = rgb_img.convert('L')
+                    r, g, b = gray, gray, gray
+                else:
+                    r, g, b = rgb_img.split()
+                a = Image.new('L', image.size, 255)
+                image = Image.merge('RGBA', [r, g, b, a])
         else:
-            # Handle 1-channel or 3-channel images (e.g., JPGs) by registering 4th channel
-            image_4c = image.convert('RGB')
-        
+            # Extract RGB 3 channels
+            if image.mode == 'RGBA':
+                image = image.convert('RGB')
+            else:
+                image = image.convert('RGB')
+
+            # Convert to grayscale and replicate to 3 channels if needed
+            if self.use_gray:
+                gray = image.convert('L')
+                image = Image.merge('RGB', [gray, gray, gray])
+
         # Apply transforms
         if self.transform:
-            image_4c = self.transform(image_4c)
-        
+            image = self.transform(image)
+
         # Convert labels to tensor
         labels_tensor = torch.tensor(labels, dtype=torch.float32)
-        
-        return image_4c, labels_tensor
+
+        return image, labels_tensor
 
 
 def get_transforms(
@@ -481,13 +519,17 @@ def create_dataloaders(
             train_dir, 
             transform=train_transform,
             label_names=label_names,
-            wqmodules_dir='wqmodules'
+            wqmodules_dir='wqmodules',
+            use_contrastive=use_contrastive,
+            use_gray=use_gray
         )
         val_dataset = QRCodeMultiLabelDataset(
             val_dir, 
             transform=val_transform,
             label_names=label_names,
-            wqmodules_dir='wqmodules'
+            wqmodules_dir='wqmodules',
+            use_contrastive=use_contrastive,
+            use_gray=use_gray
         )
         
         # Verify label names match
@@ -497,8 +539,8 @@ def create_dataloaders(
         metadata = train_dataset.label_names
     else:
         # Single-class classification
-        train_dataset = QRCodeDataset(train_dir, transform=train_transform)
-        val_dataset = QRCodeDataset(val_dir, transform=val_transform)
+        train_dataset = QRCodeDataset(train_dir, transform=train_transform, use_contrastive=use_contrastive, use_gray=use_gray)
+        val_dataset = QRCodeDataset(val_dir, transform=val_transform, use_contrastive=use_contrastive, use_gray=use_gray)
         
         # Verify classes match
         if train_dataset.classes != val_dataset.classes:

@@ -35,10 +35,10 @@ if __name__ == '__main__':
         label_names=["is_copied", "is_low_light", "is_blurry", "is_screen"],
         load_checkpoint_path=None,
         pretrained_path=None,
-        use_contrastive=False,
+        use_contrastive=True,
         contrastive_weight=0.3,
         classification_weight=1.0,
-        use_gray=False
+        use_gray=True
     )
     
     print("\n" + "="*60)
