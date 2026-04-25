@@ -16,6 +16,9 @@ Usage:
     # Export with custom input size
     python export_to_onnx.py --input-size 224
     
+    # Export with rectangular input size (Height Width)
+    python export_to_onnx.py --input-size 384 256
+    
     # Export with specific opset version
     python export_to_onnx.py --opset 13
 """
@@ -48,6 +51,9 @@ Examples:
   # Export with custom input size (224x224)
   python export_to_onnx.py --input-size 224
   
+  # Export with rectangular input size
+  python export_to_onnx.py --input-size 384 256
+  
   # Export with specific opset version for newer OpenCV
   python export_to_onnx.py --opset 13
   
@@ -73,8 +79,10 @@ Examples:
     parser.add_argument(
         '--input-size', '-s',
         type=int,
-        default=384,
-        help='Input image size (assumes square images). Default: 224'
+        nargs=2,
+        default=[384, 384],
+        metavar=('HEIGHT', 'WIDTH'),
+        help='Input image size as Height Width (e.g., 384 256 for rectangular). Default: 384 384'
     )
 
     parser.add_argument(
@@ -119,8 +127,9 @@ Examples:
     
     args = parser.parse_args()
     
-    # Prepare arguments
-    input_size = (args.input_channels, args.input_size, args.input_size)
+    input_size_h = args.input_size[0]
+    input_size_w = args.input_size[1]
+    input_size = (args.input_channels, input_size_h, input_size_w)
     dynamic_axes = not args.no_dynamic
     verbose = not args.quiet
     

@@ -600,7 +600,7 @@ def export_to_onnx(
         print(f"✓ Model loaded successfully")
         print(f"  - Architecture: {model_name}")
         print(f"  - Type:         {model_type}")
-        print(f"  - Classes:      {num_classes}")
+        print(f"  - Classes:      {num_labels}")
         if 'epoch' in checkpoint:
             print(f"  - Epoch:        {checkpoint['epoch']}")
         if 'accuracy' in checkpoint:
