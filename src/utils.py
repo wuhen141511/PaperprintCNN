@@ -8,7 +8,6 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import matplotlib.pyplot as plt
 from typing import Dict, List, Tuple, Optional
 import os
 from pathlib import Path
@@ -189,91 +188,6 @@ def calculate_multilabel_metrics(predictions: torch.Tensor, labels: torch.Tensor
         result[f'label_{i}_accuracy'] = acc
     
     return result
-
-
-def plot_training_history(history: Dict[str, List[float]], save_path: str = None):
-    """
-    Plot training history (loss and accuracy curves).
-    
-    Args:
-        history: Dictionary containing 'train_loss', 'val_loss', 'train_acc', 'val_acc'
-        save_path: Optional path to save the plot
-    """
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 4))
-    
-    # Plot loss
-    ax1.plot(history['train_loss'], label='Train Loss')
-    if 'val_loss' in history:
-        ax1.plot(history['val_loss'], label='Validation Loss')
-    ax1.set_xlabel('Epoch')
-    ax1.set_ylabel('Loss')
-    ax1.set_title('Training and Validation Loss')
-    ax1.legend()
-    ax1.grid(True)
-    
-    # Plot accuracy
-    ax2.plot(history['train_acc'], label='Train Accuracy')
-    if 'val_acc' in history:
-        ax2.plot(history['val_acc'], label='Validation Accuracy')
-    ax2.set_xlabel('Epoch')
-    ax2.set_ylabel('Accuracy')
-    ax2.set_title('Training and Validation Accuracy')
-    ax2.legend()
-    ax2.grid(True)
-    
-    plt.tight_layout()
-    
-    if save_path:
-        os.makedirs(os.path.dirname(save_path), exist_ok=True)
-        plt.savefig(save_path, dpi=150, bbox_inches='tight')
-        print(f"Training history plot saved to {save_path}")
-    
-    plt.show()
-
-
-def visualize_predictions(images, predictions, labels, class_names, num_images=8):
-    """
-    Visualize model predictions on a batch of images.
-    
-    Args:
-        images: Batch of images (tensor)
-        predictions: Model predictions (logits)
-        labels: Ground truth labels
-        class_names: List of class names
-        num_images: Number of images to display
-    """
-    num_images = min(num_images, len(images))
-    fig, axes = plt.subplots(2, 4, figsize=(15, 8))
-    axes = axes.flatten()
-    
-    pred_classes = torch.argmax(predictions, dim=1)
-    probs = torch.softmax(predictions, dim=1)
-    
-    for i in range(num_images):
-        img = images[i].cpu().numpy().transpose(1, 2, 0)
-        # Denormalize image
-        mean = np.array([0.485, 0.456, 0.406])
-        std = np.array([0.229, 0.224, 0.225])
-        img = std * img + mean
-        img = np.clip(img, 0, 1)
-        
-        pred_class = pred_classes[i].item()
-        true_class = labels[i].item()
-        confidence = probs[i][pred_class].item()
-        
-        color = 'green' if pred_class == true_class else 'red'
-        
-        axes[i].imshow(img)
-        axes[i].axis('off')
-        axes[i].set_title(
-            f'Pred: {class_names[pred_class]} ({confidence:.2%})\n'
-            f'True: {class_names[true_class]}',
-            color=color,
-            fontsize=10
-        )
-    
-    plt.tight_layout()
-    plt.show()
 
 
 def split_train_val_data(
