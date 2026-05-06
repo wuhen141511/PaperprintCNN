@@ -10,6 +10,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from typing import Dict, List, Tuple, Optional
 import os
+import json
 from pathlib import Path
 
 
@@ -564,13 +565,28 @@ def export_to_onnx(
             
             onnx_model = onnx.load(str(output_path))
             
+            # Add training info metadata
+            train_info = {}
+            if 'epoch' in checkpoint:
+                train_info['epoch'] = checkpoint['epoch']
+            if 'accuracy' in checkpoint:
+                train_info['accuracy'] = round(float(checkpoint['accuracy']), 4)
+            if 'loss' in checkpoint:
+                train_info['loss'] = round(float(checkpoint['loss']), 4)
+
+            if train_info:
+                meta = onnx_model.metadata_props.add()
+                meta.key = "custom_info"
+                meta.value = json.dumps(train_info)
+                onnx.save(onnx_model, str(output_path))
+                if verbose:
+                    print(f"✓ Added training info to ONNX metadata: {train_info}")
+
             # Add version metadata if provided
             if version is not None:
-                # 添加元数据（包括版本号）
                 meta = onnx_model.metadata_props.add()
                 meta.key = "custom_version"
                 meta.value = version
-                # Save the model with updated metadata
                 onnx.save(onnx_model, str(output_path))
                 if verbose:
                     print(f"✓ Added version {version} to ONNX model metadata")
