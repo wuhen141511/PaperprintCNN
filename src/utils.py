@@ -660,7 +660,7 @@ class QRCodeContrastiveLoss(nn.Module):
         Args:
             rgb_feat: (B, D) RGB特征向量
             ref_feat: (B, D) 参考图特征向量
-            labels: (B, 3) 多标签 [is_copied, is_low_light, is_blurry]
+            labels: (B, 4) 多标签 [is_copied, is_low_light, is_blurry, is_screen]
         
         Returns:
             loss: 对比损失值
@@ -673,7 +673,7 @@ class QRCodeContrastiveLoss(nn.Module):
         similarity = F.cosine_similarity(rgb_feat, ref_feat, dim=1)  # (B,)
         
         # 判断是否为原生图（所有标签都为0）
-        is_native = (labels[:, 0] == 0) & (labels[:, 1] == 0) & (labels[:, 2] == 0)
+        is_native = (labels == 0).all(dim=1)
         
         # 原生图：相似度应该高（接近1）
         # 非原生图：相似度应该低（接近0）
